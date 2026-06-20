@@ -24,3 +24,4 @@ config.load_kube_config()
 v1 = client.CoreV1Api()
 pods = v1.list_pod_for_all_namespaces()
 print(f"Kubernetes ✅: {len(pods.items)} pods found")
+
