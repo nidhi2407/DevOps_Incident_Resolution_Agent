@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: pending-pod
+    image: nginx
+    resources:
+      requests:
+        memory: "100Gi"

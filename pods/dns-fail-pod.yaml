@@ -1,0 +1,11 @@
+# dns-fail-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dns-fail-pod
+spec:
+  restartPolicy: Never
+  containers:
+  - name: dns-fail-pod
+    image: busybox
+    command: ["sh", "-c", "nslookup nonexistent.invalid.domain.test || exit 1"]
