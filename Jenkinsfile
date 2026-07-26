@@ -15,12 +15,19 @@ pipeline {
 
         stage('Setup Secrets') {
             steps {
-                script {
-                    echo "Setting up Kubernetes Secrets..."
-                    sh """
-                    kubectl get secret devops-agent-secrets >/dev/null 2>&1 || \
-                    kubectl create secret generic devops-agent-secrets --from-literal=GROQ_API_KEY="${GROQ_API_KEY}"
-                    """
+                // Pull the Groq API key from Jenkins credentials (ID: GROQ_API_KEY)
+                withCredentials([string(credentialsId: 'GROQ_API_KEY', variable: 'GROQ_API_KEY')]) {
+                    script {
+                        // Verify kubectl is present inside the container
+                        sh '''
+                            if ! command -v kubectl >/dev/null 2>&1; then
+                                echo "ERROR: kubectl not installed in Jenkins container"
+                                exit 1
+                            fi
+                        '''
+                        // Create or replace the secret safely – the variable is expanded by the shell, not Groovy
+                        sh "kubectl create secret generic devops-agent-secrets --from-literal=GROQ_API_KEY=${GROQ_API_KEY} --dry-run=client -o yaml | kubectl apply -f -"
+                    }
                 }
             }
         }

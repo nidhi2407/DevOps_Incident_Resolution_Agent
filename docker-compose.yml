@@ -1,14 +1,21 @@
 version: '3.8'
 services:
   jenkins:
-    image: jenkins/jenkins:lts-jdk11
+    image: jenkins/jenkins:lts
     restart: unless-stopped
     ports:
       - "8080:8080"
       - "50000:50000"
     volumes:
       - jenkins_home:/var/jenkins_home
+      # Mount host Minikube kube config into Jenkins container
+      - "C:/Users/hp/.minikube:/var/jenkins_home/.kube"
+      # Mount host kubectl binary for use inside Jenkins
+      - "C:/Program Files/Docker/Docker/resources/bin/kubectl.exe:/usr/local/bin/kubectl"
     environment:
-      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+      # No runSetupWizard flag, so Jenkins UI will show the initial setup wizard
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
+      # Point kube config to the mounted location inside container
+      - KUBECONFIG=/var/jenkins_home/.kube/config
 volumes:
   jenkins_home:
