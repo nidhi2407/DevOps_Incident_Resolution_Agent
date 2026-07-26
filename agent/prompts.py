@@ -10,7 +10,7 @@ RCA_PROMPT = ChatPromptTemplate.from_messages([
 6. If logs are provided, name the most important concrete log evidence in the root cause.
    For example, mention exact error terms such as NXDOMAIN, connection refused,
    permission denied, OOMKilled, or failed health checks when they appear.
-7. If a simple automated fix is possible and safe (restart, delete pod, rollback), include a REMEDIATION block.
+7. Always provide a REMEDIATION block with a whitelisted action if the runbook recommends restarting, deleting a pod, scaling, or rolling back as a resolution or recovery step.
 
 Format your response EXACTLY as:
 ROOT CAUSE: <text>
@@ -22,8 +22,8 @@ REMEDIATION:
 ACTION: <one of: restart_deployment | delete_pod | rollout_undo | scale_up | none>
 REASON: <one sentence why this fix is appropriate>
 
-Only include a non-'none' ACTION if the fix is safe, simple, and clearly indicated by the runbook.
-For complex issues (permission errors, config mismatches, missing secrets), use ACTION: none."""),
+For application crashes (CrashLoopBackOff), DNS resolution failures, connection refused, or OOMKilled states, suggest 'restart_deployment' or 'delete_pod' as appropriate.
+Only use ACTION: none for infrastructure failures that cannot be resolved via workload restarts (e.g. node capacity limits or pending PVcs)."""),
     ("human", """Runbook Context:
 {context}
 
