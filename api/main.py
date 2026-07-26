@@ -6,6 +6,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from agent.graph import agent_graph
+from agent.remediation import (
+    execute_remediation,
+    get_allowed_actions,
+    remediation_history,
+)
 from ingestion.k8s_watcher import get_unhealthy_pods, get_all_pods_summary
 
 app = FastAPI(title="DevOps Incident Resolution Agent - Grafana Monitor")
@@ -107,7 +112,8 @@ def chat(req: AlertRequest):
         "rca": result["rca"],
         "confidence": result["confidence"],
         "retry_count": result["retry_count"],
-        "logs_used": result.get("logs_used", False)
+        "logs_used": result.get("logs_used", False),
+        "remediation_action": result.get("remediation_action", {"action": "none", "reason": ""}),
     }
 
 @app.get("/scan")
@@ -126,7 +132,54 @@ def scan_cluster():
             "confidence": result["confidence"],
             "retry_count": result["retry_count"],
             "logs_used": result.get("logs_used", False),
-            "log_fetch_error": result.get("log_fetch_error", "")
+            "log_fetch_error": result.get("log_fetch_error", ""),
+            "remediation_action": result.get("remediation_action", {"action": "none", "reason": ""}),
         })
     return {"detected_issues": results}
 
+
+# ─────────────────────────────────────────────────
+# Remediation Endpoints
+# ─────────────────────────────────────────────────
+
+class RemediationRequest(BaseModel):
+    action_type: str
+    pod_name: str
+    namespace: str
+    replicas: Optional[int] = 1
+    verify: Optional[bool] = True
+    verify_timeout: Optional[int] = 60
+
+@app.get("/remediations/actions")
+def list_remediation_actions():
+    """Return the catalogue of allowed remediation action types."""
+    return {"allowed_actions": get_allowed_actions()}
+
+@app.post("/remediations/execute")
+def run_remediation(req: RemediationRequest):
+    """Execute a validated remediation action on a pod/deployment."""
+    result = execute_remediation(
+        action_type=req.action_type,
+        pod_name=req.pod_name,
+        namespace=req.namespace,
+        replicas=req.replicas or 1,
+        verify=req.verify if req.verify is not None else True,
+        verify_timeout=req.verify_timeout or 60,
+    )
+    return {
+        "success": result.success,
+        "action_type": result.action_type,
+        "pod_name": result.pod_name,
+        "namespace": result.namespace,
+        "command": result.command,
+        "output": result.output,
+        "error": result.error,
+        "verification_status": result.verification_status,
+        "verification_msg": result.verification_msg,
+        "executed_at": result.executed_at,
+    }
+
+@app.get("/remediations/history")
+def get_remediation_history():
+    """Return the audit log of all remediation actions executed this session."""
+    return {"history": list(reversed(remediation_history))}

@@ -1,4 +1,4 @@
-from typing import List, TypedDict
+from typing import List, TypedDict, Dict, Any
 
 class AgentState(TypedDict, total=False):
     alert: str              # raw incoming alert
@@ -17,3 +17,4 @@ class AgentState(TypedDict, total=False):
     logs_used: bool         # whether logs were available to the LLM
     log_attempted: bool     # whether the graph already tried fetching logs
     log_fetch_error: str    # reason logs could not be fetched, if any
+    remediation_action: Dict[str, Any]  # {action, reason} extracted from LLM

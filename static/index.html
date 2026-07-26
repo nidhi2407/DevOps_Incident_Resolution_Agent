@@ -42,6 +42,10 @@
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                     AI Custom Alert Chat
                 </button>
+                <button class="nav-btn" id="tab-auditlog" onclick="switchView('auditlog')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Remediation Log
+                </button>
             </div>
 
             <div class="header-right">
@@ -225,7 +229,39 @@
                     </div>
                 </div>
             </div>
-        </main>
+            <!-- View 4: Remediation Audit Log -->
+            <div class="view-panel" id="view-auditlog">
+                <div class="panel-header">
+                    <div>
+                        <h2>Remediation Audit Log</h2>
+                        <p class="panel-subtitle">All automated self-healing actions executed this session</p>
+                    </div>
+                    <button class="action-btn secondary" onclick="loadAuditLog()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                        Refresh Log
+                    </button>
+                </div>
+                <div class="table-container" id="audit-log-container">
+                    <table class="pods-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Action</th>
+                                <th>Pod</th>
+                                <th>Namespace</th>
+                                <th>Command Executed</th>
+                                <th>Result</th>
+                                <th>Verification</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-log-body">
+                            <tr>
+                                <td colspan="7" class="loading-cell" style="color: var(--text-muted); text-align: center; padding: 40px;">No remediation actions executed yet this session.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
 
         <!-- OpenAI Slide-Over RCA Drawer -->
         <div class="drawer-overlay" id="rca-drawer-overlay" onclick="closeRcaDrawer()"></div>
@@ -263,6 +299,24 @@
                             <span class="spinner"></span> Running LangGraph RAG Agent on Groq Llama-3.3-70B...
                         </div>
                     </div>
+                </div>
+
+                <!-- Auto-Fix Action Card -->
+                <div class="autofix-card" id="autofix-card" style="display: none;">
+                    <div class="autofix-header">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        <span>Auto-Fix Available</span>
+                    </div>
+                    <div class="autofix-reason" id="autofix-reason">Restart the deployment to recover from CrashLoopBackOff.</div>
+                    <div class="autofix-meta">
+                        <span class="autofix-action-badge" id="autofix-action-badge">restart_deployment</span>
+                        <span style="color: var(--text-muted); font-size: 11px;">Low-risk • Human-approved</span>
+                    </div>
+                    <button class="run-autofix-btn" id="run-autofix-btn" onclick="runAutoFix()">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Run Automated Remediation
+                    </button>
+                    <div class="autofix-status" id="autofix-status"></div>
                 </div>
             </div>
         </aside>

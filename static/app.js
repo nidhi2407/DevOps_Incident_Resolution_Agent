@@ -3,6 +3,7 @@ let rawPodsData = [];
 let rawStats = {};
 let namespacesList = [];
 let autoPollingInterval = null;
+let currentRemediation = null; // stores {action, pod_name, namespace} for active drawer
 
 document.addEventListener("DOMContentLoaded", () => {
     fetchClusterData();
@@ -19,6 +20,10 @@ function switchView(viewName) {
 
     document.getElementById(`tab-${viewName}`).classList.add("active");
     document.getElementById(`view-${viewName}`).classList.add("active");
+
+    if (viewName === 'auditlog') {
+        loadAuditLog();
+    }
 }
 
 // Fetch Cluster Telemetry from FastAPI /pods
@@ -278,8 +283,33 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
         else confidenceVal.style.color = "var(--color-red)";
 
         rcaOutput.innerHTML = marked.parse(data.rca || "No RCA generated.");
+
+        // ── Auto-Fix Card ──
+        const remediation = data.remediation_action || {};
+        const autofixCard = document.getElementById("autofix-card");
+        const autofixStatus = document.getElementById("autofix-status");
+
+        // Reset status area
+        autofixStatus.className = "autofix-status";
+        autofixStatus.innerHTML = "";
+        document.getElementById("run-autofix-btn").disabled = false;
+
+        if (remediation.action && remediation.action !== "none") {
+            currentRemediation = {
+                action_type: remediation.action,
+                pod_name: podName,
+                namespace: namespace,
+            };
+            document.getElementById("autofix-action-badge").textContent = remediation.action;
+            document.getElementById("autofix-reason").textContent = remediation.reason || "Automated fix recommended by AI agent.";
+            autofixCard.style.display = "block";
+        } else {
+            autofixCard.style.display = "none";
+            currentRemediation = null;
+        }
     } catch (err) {
         rcaOutput.innerHTML = `<div style="color: var(--color-red);">Error generating RCA report: ${err.message}</div>`;
+        document.getElementById("autofix-card").style.display = "none";
     }
 }
 
@@ -355,4 +385,116 @@ async function sendCustomChat() {
 
 function escapeStr(str) {
     return (str || "").replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, ' ');
+}
+
+// ─── Auto-Fix Remediation ─────────────────────────────────────────────────────
+async function runAutoFix() {
+    if (!currentRemediation) return;
+
+    const btn = document.getElementById("run-autofix-btn");
+    const statusEl = document.getElementById("autofix-status");
+
+    btn.disabled = true;
+    statusEl.className = "autofix-status loading";
+    statusEl.innerHTML = `<span class="spinner"></span> Executing ${currentRemediation.action_type} on ${currentRemediation.pod_name}...`;
+
+    try {
+        const response = await fetch("/remediations/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                action_type: currentRemediation.action_type,
+                pod_name: currentRemediation.pod_name,
+                namespace: currentRemediation.namespace,
+                verify: true,
+                verify_timeout: 60,
+            })
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            statusEl.className = "autofix-status error";
+            statusEl.innerHTML = `
+                <strong>❌ Execution Failed</strong><br>
+                ${result.error || 'Unknown error occurred.'}
+            `;
+            btn.disabled = false;
+            return;
+        }
+
+        // Show verification result
+        const vs = result.verification_status;
+        if (vs === "recovered") {
+            statusEl.className = "autofix-status success";
+            statusEl.innerHTML = `
+                <strong>✅ Recovery Confirmed</strong><br>
+                Command: <code>${result.command}</code><br>
+                ${result.verification_msg}
+            `;
+        } else if (vs === "timeout") {
+            statusEl.className = "autofix-status warning";
+            statusEl.innerHTML = `
+                <strong>⏱ Command Executed — Monitoring Timed Out</strong><br>
+                Command: <code>${result.command}</code><br>
+                ${result.verification_msg}
+            `;
+        } else if (vs === "failed") {
+            statusEl.className = "autofix-status error";
+            statusEl.innerHTML = `
+                <strong>❌ Pod Still Failing After Fix</strong><br>
+                Command: <code>${result.command}</code><br>
+                ${result.verification_msg}
+            `;
+        } else {
+            statusEl.className = "autofix-status success";
+            statusEl.innerHTML = `
+                <strong>✅ Command Executed</strong><br>
+                <code>${result.command}</code>
+            `;
+        }
+    } catch (err) {
+        statusEl.className = "autofix-status error";
+        statusEl.innerHTML = `<strong>Network Error:</strong> ${err.message}`;
+        btn.disabled = false;
+    }
+}
+
+// ─── Remediation Audit Log ────────────────────────────────────────────────────
+async function loadAuditLog() {
+    const tbody = document.getElementById("audit-log-body");
+    tbody.innerHTML = `<tr><td colspan="7" style="color: var(--text-muted); text-align: center; padding: 30px;"><span class="spinner" style="display:inline-block"></span> Loading...</td></tr>`;
+
+    try {
+        const response = await fetch("/remediations/history");
+        const data = await response.json();
+        const history = data.history || [];
+
+        if (history.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="color: var(--text-muted); text-align: center; padding: 40px;">No remediation actions executed yet this session.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = history.map(entry => {
+            const ts = new Date(entry.executed_at).toLocaleTimeString();
+            const resultBadge = entry.success
+                ? `<span class="reason-badge healthy" style="font-size: 10px;">SUCCESS</span>`
+                : `<span class="reason-badge unhealthy" style="font-size: 10px;">FAILED</span>`;
+            const vs = entry.verification_status || "skipped";
+            const verifyBadge = `<span class="verify-badge ${vs}">${vs}</span>`;
+            return `
+                <tr>
+                    <td style="color: var(--text-muted); font-size: 12px;">${ts}</td>
+                    <td><span class="autofix-action-badge">${entry.action_type}</span></td>
+                    <td style="font-weight: 600;">${entry.pod_name}</td>
+                    <td><span class="ns-tag">${entry.namespace}</span></td>
+                    <td><div class="audit-command-cell">${entry.command || '—'}</div></td>
+                    <td>${resultBadge}${entry.error ? `<div style="font-size:11px; color:var(--color-red); margin-top:4px;">${entry.error}</div>` : ''}</td>
+                    <td>${verifyBadge}<div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${entry.verification_msg || ''}</div></td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="color: var(--color-red); text-align: center; padding: 30px;">Error loading audit log: ${err.message}</td></tr>`;
+    }
 }

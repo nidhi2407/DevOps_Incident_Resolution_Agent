@@ -77,8 +77,7 @@ def get_pod_logs(namespace, pod_name, containers=None):
         return logs, []
 
 
-def get_mock_pods():
-    return [
+MOCK_PODS_DATA = [
         {
             "pod_name": "dns-fail-pod",
             "namespace": "default",
@@ -249,6 +248,10 @@ def get_mock_pods():
             "diagnostics": []
         }
     ]
+
+
+def get_mock_pods():
+    return MOCK_PODS_DATA
 
 
 

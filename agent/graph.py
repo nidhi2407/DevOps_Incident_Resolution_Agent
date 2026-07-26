@@ -67,6 +67,35 @@ def retrieve_node(state: AgentState) -> AgentState:
     return state
 
 
+VALID_ACTIONS = {"restart_deployment", "delete_pod", "rollout_undo", "scale_up", "none"}
+
+
+def _extract_remediation_action(text: str) -> dict:
+    """
+    Parse the REMEDIATION block from the LLM response.
+    Returns {"action": ..., "reason": ...}.
+    """
+    action = "none"
+    reason = ""
+    lines = text.splitlines()
+    in_remediation = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "REMEDIATION:":
+            in_remediation = True
+            continue
+        if in_remediation:
+            if stripped.startswith("ACTION:"):
+                raw = stripped.replace("ACTION:", "").strip().lower()
+                if raw in VALID_ACTIONS:
+                    action = raw
+            elif stripped.startswith("REASON:"):
+                reason = stripped.replace("REASON:", "").strip()
+
+    return {"action": action, "reason": reason}
+
+
 def analyze_node(state: AgentState) -> AgentState:
     chain = RCA_PROMPT | llm
     response = chain.invoke({
@@ -80,6 +109,7 @@ def analyze_node(state: AgentState) -> AgentState:
 
     state["rca"] = text
     state["confidence"] = _extract_confidence(text)
+    state["remediation_action"] = _extract_remediation_action(text)
     return state
 
 
