@@ -1,0 +1,41 @@
+# Scenario 2: OOMKilled — Auto-Fix: restart_deployment
+# Container is given a very tight memory limit (8Mi) and stress-fills memory,
+# causing the OOM Killer to terminate it with Exit Code 137.
+# The agent will detect OOMKilled + Exit Code 137 and suggest:
+#   → kubectl rollout restart deployment/oom-payment-svc -n default
+#
+# Deploy:  kubectl apply -f scenario-2-oomkilled-restart.yaml
+# Watch:   kubectl get pods -w -n default
+# Real fix would also patch the memory limit upward, but restart is first step.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oom-payment-svc
+  namespace: default
+  labels:
+    app: oom-payment-svc
+    scenario: "auto-fix-restart-oom"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oom-payment-svc
+  template:
+    metadata:
+      labels:
+        app: oom-payment-svc
+    spec:
+      containers:
+        - name: payment-api
+          image: polinux/stress:latest
+          # Tries to allocate 100MB — killed by OOMKiller because limit is 8Mi
+          command: ["stress"]
+          args: ["--vm", "1", "--vm-bytes", "100M", "--vm-hang", "1"]
+          resources:
+            requests:
+              memory: "8Mi"
+              cpu: "10m"
+            limits:
+              memory: "8Mi"   # deliberately too low → OOMKilled
+              cpu: "100m"

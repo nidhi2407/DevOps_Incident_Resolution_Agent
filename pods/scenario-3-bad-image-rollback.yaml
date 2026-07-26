@@ -1,0 +1,43 @@
+# Scenario 3: Bad image → CrashLoopBackOff — Auto-Fix: rollout_undo
+# A deployment is updated to a non-existent image tag, causing ImagePullBackOff
+# then CrashLoopBackOff. The agent detects the bad rollout and suggests:
+#   → kubectl rollout undo deployment/web-frontend -n default
+#
+# Deploy step 1 (good version): kubectl apply -f scenario-3a-good-deploy.yaml
+# Deploy step 2 (bad rollout):  kubectl apply -f scenario-3-bad-image-rollback.yaml
+# Watch:   kubectl get pods -w -n default
+# Revert:  kubectl rollout undo deployment/web-frontend -n default
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: default
+  labels:
+    app: web-frontend
+    scenario: "auto-fix-rollback"
+  annotations:
+    kubernetes.io/change-cause: "Deployed broken image tag v2.99.99-bad"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-frontend
+  template:
+    metadata:
+      labels:
+        app: web-frontend
+    spec:
+      containers:
+        - name: nginx
+          # This image tag does not exist — causes ImagePullBackOff → rollout stuck
+          image: nginx:99.99.99-nonexistent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"

@@ -277,6 +277,13 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
 
         const data = await response.json();
 
+        if (!response.ok) {
+            const errMsg = data.detail || data.error || `Server error ${response.status}`;
+            rcaOutput.innerHTML = `<div style="color: var(--color-red); font-family: var(--font-mono); font-size: 12px; padding: 12px; background: rgba(255,80,80,0.05); border: 1px solid rgba(255,80,80,0.2); border-radius: 8px;">⚠️ ${errMsg}</div>`;
+            document.getElementById("autofix-card").style.display = "none";
+            return;
+        }
+
         confidenceVal.textContent = (data.confidence || "MEDIUM").toUpperCase();
         if (data.confidence === "High") confidenceVal.style.color = "var(--color-openai-green)";
         else if (data.confidence === "Medium") confidenceVal.style.color = "var(--color-amber)";
@@ -287,7 +294,7 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
         // ── Auto-Fix Card ──
         updateAutofixCard(data.remediation_action || {}, podName, namespace);
     } catch (err) {
-        rcaOutput.innerHTML = `<div style="color: var(--color-red);">Error generating RCA report: ${err.message}</div>`;
+        rcaOutput.innerHTML = `<div style="color: var(--color-red); font-family: var(--font-mono); font-size: 12px; padding: 12px; background: rgba(255,80,80,0.05); border: 1px solid rgba(255,80,80,0.2); border-radius: 8px;">⚠️ Could not reach the agent API. Is the server running?<br><small>${err.message}</small></div>`;
         document.getElementById("autofix-card").style.display = "none";
     }
 }

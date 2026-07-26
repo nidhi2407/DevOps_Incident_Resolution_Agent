@@ -641,6 +641,7 @@ body {
     position: fixed;
     top: 0; right: -580px; bottom: 0;
     width: 560px;
+    height: 100vh;                /* fill full viewport height */
     background: var(--bg-header);
     border-left: 1px solid var(--border-strong);
     z-index: 101;
@@ -648,6 +649,7 @@ body {
     flex-direction: column;
     transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: -10px 0 40px rgba(0,0,0,0.8);
+    overflow: hidden;             /* clip at edges; body scrolls internally */
 }
 .rca-drawer.active { right: 0; }
 
@@ -681,8 +683,10 @@ body {
 
 .drawer-body {
     padding: 20px;
-    overflow-y: auto;
+    padding-bottom: 40px;         /* ensure Run button is never clipped */
+    overflow-y: auto;             /* this element scrolls */
     flex: 1;
+    min-height: 0;                /* CRITICAL: allows flex child to shrink below content size */
     display: flex;
     flex-direction: column;
     gap: 16px;

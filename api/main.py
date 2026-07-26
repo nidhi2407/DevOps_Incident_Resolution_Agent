@@ -1,9 +1,10 @@
 import os
+import traceback
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from agent.graph import agent_graph
 from agent.remediation import (
@@ -99,43 +100,70 @@ def get_pods():
 
 @app.post("/chat")
 def chat(req: AlertRequest):
-    initial_state = build_initial_state(
-        req.alert,
-        pod_name=req.pod_name or "",
-        namespace=req.namespace or "",
-        containers=req.containers or [],
-        status_reason=req.status_reason or "",
-        diagnostics=req.diagnostics or []
-    )
-    result = agent_graph.invoke(initial_state)
-    return {
-        "rca": result["rca"],
-        "confidence": result["confidence"],
-        "retry_count": result["retry_count"],
-        "logs_used": result.get("logs_used", False),
-        "remediation_action": result.get("remediation_action", {"action": "none", "reason": ""}),
-    }
-
-@app.get("/scan")
-def scan_cluster():
-    incidents = get_unhealthy_pods()
-    results = []
-    for incident in incidents:
-        initial_state = build_initial_state(**incident)
+    try:
+        initial_state = build_initial_state(
+            req.alert,
+            pod_name=req.pod_name or "",
+            namespace=req.namespace or "",
+            containers=req.containers or [],
+            status_reason=req.status_reason or "",
+            diagnostics=req.diagnostics or []
+        )
         result = agent_graph.invoke(initial_state)
-        results.append({
-            "alert": incident.get("alert", f"Pod {incident.get('pod_name')} is unhealthy"),
-            "pod_name": incident.get("pod_name", "unknown"),
-            "namespace": incident.get("namespace", "default"),
-            "status_reason": incident.get("status_reason", "Unhealthy"),
+        return {
             "rca": result["rca"],
             "confidence": result["confidence"],
             "retry_count": result["retry_count"],
             "logs_used": result.get("logs_used", False),
-            "log_fetch_error": result.get("log_fetch_error", ""),
             "remediation_action": result.get("remediation_action", {"action": "none", "reason": ""}),
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        return JSONResponse(status_code=500, content={
+            "error": str(e),
+            "detail": f"Agent error: {type(e).__name__}: {e}",
+            "traceback": tb
         })
-    return {"detected_issues": results}
+
+@app.get("/scan")
+def scan_cluster():
+    try:
+        incidents = get_unhealthy_pods()
+        results = []
+        for incident in incidents:
+            try:
+                initial_state = build_initial_state(**incident)
+                result = agent_graph.invoke(initial_state)
+                results.append({
+                    "alert": incident.get("alert", f"Pod {incident.get('pod_name')} is unhealthy"),
+                    "pod_name": incident.get("pod_name", "unknown"),
+                    "namespace": incident.get("namespace", "default"),
+                    "status_reason": incident.get("status_reason", "Unhealthy"),
+                    "rca": result["rca"],
+                    "confidence": result["confidence"],
+                    "retry_count": result["retry_count"],
+                    "logs_used": result.get("logs_used", False),
+                    "log_fetch_error": result.get("log_fetch_error", ""),
+                    "remediation_action": result.get("remediation_action", {"action": "none", "reason": ""}),
+                })
+            except Exception as pod_err:
+                results.append({
+                    "pod_name": incident.get("pod_name", "unknown"),
+                    "namespace": incident.get("namespace", "default"),
+                    "status_reason": incident.get("status_reason", "Unhealthy"),
+                    "rca": f"⚠️ Agent error for this pod: {pod_err}",
+                    "confidence": "Low",
+                    "retry_count": 0,
+                    "logs_used": False,
+                    "log_fetch_error": str(pod_err),
+                    "remediation_action": {"action": "none", "reason": "Agent error"},
+                })
+        return {"detected_issues": results}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={
+            "error": str(e),
+            "detail": f"Scan error: {type(e).__name__}: {e}"
+        })
 
 
 # ─────────────────────────────────────────────────

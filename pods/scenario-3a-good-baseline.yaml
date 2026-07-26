@@ -1,0 +1,37 @@
+# Scenario 3a: Good baseline deployment (apply FIRST before scenario-3)
+# This creates the deployment history that rollout undo can revert to.
+#
+# Apply FIRST: kubectl apply -f scenario-3a-good-baseline.yaml
+# Then apply:  kubectl apply -f scenario-3-bad-image-rollback.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-frontend
+  namespace: default
+  labels:
+    app: web-frontend
+  annotations:
+    kubernetes.io/change-cause: "Deployed stable version v1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-frontend
+  template:
+    metadata:
+      labels:
+        app: web-frontend
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine   # good, stable image
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
