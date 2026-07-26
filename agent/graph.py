@@ -21,6 +21,8 @@ VAGUE_STATUS_REASONS = {
     "containercreating",
     "runcontainererror",
     "createcontainerconfigerror",
+    "crashloopbackoff",
+    "oomkilled",
 }
 
 
@@ -88,7 +90,7 @@ def _status_is_vague(state: AgentState) -> bool:
         for reason in reasons.split(",")
         if reason.strip()
     }
-    return bool(normalized & VAGUE_STATUS_REASONS)
+    return bool(normalized & VAGUE_STATUS_REASONS) or not reasons
 
 
 def _should_fetch_logs(state: AgentState) -> bool:
@@ -98,7 +100,8 @@ def _should_fetch_logs(state: AgentState) -> bool:
         return False
     if not state.get("containers"):
         return False
-    return state.get("confidence") == "Low" or _status_is_vague(state)
+    return state.get("confidence") != "High" or _status_is_vague(state) or not state.get("logs")
+
 
 
 def fetch_logs_node(state: AgentState) -> AgentState:

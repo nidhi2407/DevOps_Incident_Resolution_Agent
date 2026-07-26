@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevOps Incident Monitor — Kubernetes Cluster Dashboard</title>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Marked Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Top Bar Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="brand-logo">
+                    <svg class="openai-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 10.5961.3 6.0021 6.0021 0 0 0 5.253 3.6308a6.0487 6.0487 0 0 0-4.043 4.4138 6.027 6.027 0 0 0 1.0594 5.9525 5.9847 5.9847 0 0 0 .5157 4.9108 6.0462 6.0462 0 0 0 6.5098 2.9A6.0651 6.0651 0 0 0 13.4039 23.7a6.0021 6.0021 0 0 0 5.3431-3.3308 6.0487 6.0487 0 0 0 4.043-4.4138 6.027 6.027 0 0 0-1.0594-5.9525z" fill="currentColor"/>
+                    </svg>
+                    <span class="brand-name">DevOps Incident Monitor</span>
+                </div>
+                <div class="model-badge">
+                    <span class="model-dot"></span>
+                    <span>Llama 3.3 70B • Groq RAG</span>
+                </div>
+            </div>
+
+            <div class="header-nav">
+                <button class="nav-btn active" id="tab-inventory" onclick="switchView('inventory')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    Cluster Dashboard
+                </button>
+                <button class="nav-btn" id="tab-incidents" onclick="switchView('incidents')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Active Incidents <span class="badge-count" id="incidents-count">0</span>
+                </button>
+                <button class="nav-btn" id="tab-chat" onclick="switchView('chat')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    AI Custom Alert Chat
+                </button>
+            </div>
+
+            <div class="header-right">
+                <div class="live-indicator">
+                    <span class="pulse-dot"></span>
+                    <span class="live-text">Live Polling (10s)</span>
+                </div>
+                <button class="refresh-btn" onclick="fetchClusterData(true)" title="Force Refresh">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Metrics Bar (Grafana style) -->
+        <section class="metrics-section">
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">CLUSTER HEALTH</span>
+                    <span class="metric-icon green">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    </span>
+                </div>
+                <div class="metric-value-row">
+                    <span class="metric-value" id="stat-health-pct">--%</span>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="stat-health-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="metric-subtext" id="stat-health-subtext">Calculating health score...</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">TOTAL PODS</span>
+                    <span class="metric-icon blue">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    </span>
+                </div>
+                <div class="metric-value-row">
+                    <span class="metric-value" id="stat-total-pods">--</span>
+                </div>
+                <div class="metric-subtext">Active across all namespaces</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">HEALTHY PODS</span>
+                    <span class="metric-icon green">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                    </span>
+                </div>
+                <div class="metric-value-row">
+                    <span class="metric-value green-text" id="stat-healthy-pods">--</span>
+                </div>
+                <div class="metric-subtext">Phase: Running (100% Ready)</div>
+            </div>
+
+            <div class="metric-card">
+                <div class="metric-header">
+                    <span class="metric-title">ACTIVE INCIDENTS</span>
+                    <span class="metric-icon red">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </span>
+                </div>
+                <div class="metric-value-row">
+                    <span class="metric-value red-text" id="stat-unhealthy-pods">--</span>
+                </div>
+                <div class="metric-subtext">Requires automated AI RCA</div>
+            </div>
+        </section>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- View 1: Cluster Inventory & Pod Table -->
+            <div class="view-panel active" id="view-inventory">
+                <div class="panel-header">
+                    <div class="search-filter-group">
+                        <div class="search-box">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="text" id="search-pods" placeholder="Search pod name, namespace, or node..." oninput="renderPodsTable()">
+                        </div>
+
+                        <div class="filter-dropdown">
+                            <label>Namespace:</label>
+                            <select id="filter-namespace" onchange="renderPodsTable()">
+                                <option value="all">All Namespaces</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-dropdown">
+                            <label>Status:</label>
+                            <select id="filter-status" onchange="renderPodsTable()">
+                                <option value="all">All Statuses</option>
+                                <option value="unhealthy">Unhealthy Only</option>
+                                <option value="healthy">Healthy Only</option>
+                                <option value="CrashLoopBackOff">CrashLoopBackOff</option>
+                                <option value="OOMKilled">OOMKilled</option>
+                                <option value="Pending">Pending</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="panel-actions">
+                        <button class="action-btn secondary" onclick="scanAndAnalyzeAll()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                            Run Full AI Cluster Scan
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Pods Inventory Table -->
+                <div class="table-container">
+                    <table class="pods-table">
+                        <thead>
+                            <tr>
+                                <th width="40">State</th>
+                                <th>Pod Name</th>
+                                <th>Namespace</th>
+                                <th>Status / Reason</th>
+                                <th>Containers</th>
+                                <th>Restarts</th>
+                                <th>Node</th>
+                                <th>Age</th>
+                                <th align="right">AI RCA Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pods-table-body">
+                            <tr>
+                                <td colspan="9" class="loading-cell">Loading cluster pods telemetry...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- View 2: Active Cluster Incidents & Diagnostics -->
+            <div class="view-panel" id="view-incidents">
+                <div class="panel-header">
+                    <h2>Active Cluster Incidents & Diagnostic Traces</h2>
+                    <p class="panel-subtitle">Real-time alerts requiring root cause analysis</p>
+                </div>
+                <div class="incidents-grid" id="incidents-grid-container">
+                    <!-- Incident Cards populated via JS -->
+                </div>
+            </div>
+
+            <!-- View 3: OpenAI Style AI Chat Interface -->
+            <div class="view-panel" id="view-chat">
+                <div class="chat-wrapper">
+                    <div class="chat-history" id="chat-messages">
+                        <div class="system-welcome-card">
+                            <div class="welcome-icon">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                            </div>
+                            <h3>DevOps Incident Agent Chat</h3>
+                            <p>Ask questions about your cluster or paste error logs, Prometheus alert manager webhooks, or kubectl logs for instant AI Root Cause Analysis.</p>
+
+                            <div class="preset-prompts">
+                                <button class="chip-btn" onclick="sendPresetPrompt('Pod payment-service-7d9b4c8-2x9k in namespace prod is showing status OOMKilled')">
+                                    <span>OOMKilled Alert</span>
+                                    <small>Pod payment-service exited code 137</small>
+                                </button>
+                                <button class="chip-btn" onclick="sendPresetPrompt('Pod web-server-2x9k in namespace prod is stuck in CrashLoopBackOff')">
+                                    <span>CrashLoopBackOff</span>
+                                    <small>Web server restarting continuously</small>
+                                </button>
+                                <button class="chip-btn" onclick="sendPresetPrompt('Pod worker-processor-99x2 in namespace staging is stuck in Pending. Reason: InsufficientMemory')">
+                                    <span>Pending Pod</span>
+                                    <small>Failed scheduling due to memory limit</small>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Input Box -->
+                    <div class="chat-input-container">
+                        <textarea id="chat-input" placeholder="Paste custom alert message, stack trace, or incident details..." rows="2" onkeydown="handleChatKeyDown(event)"></textarea>
+                        <button class="send-btn" id="btn-send-chat" onclick="sendCustomChat()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- OpenAI Slide-Over RCA Drawer -->
+        <div class="drawer-overlay" id="rca-drawer-overlay" onclick="closeRcaDrawer()"></div>
+        <aside class="rca-drawer" id="rca-drawer">
+            <div class="drawer-header">
+                <div class="drawer-title-group">
+                    <div class="drawer-badge" id="drawer-status-badge">INCIDENT DETECTED</div>
+                    <h3 id="drawer-pod-name">Pod Name</h3>
+                    <span class="drawer-sub" id="drawer-namespace-sub">Namespace: prod</span>
+                </div>
+                <button class="close-drawer-btn" onclick="closeRcaDrawer()">&times;</button>
+            </div>
+
+            <div class="drawer-body">
+                <!-- Confidence Score Box -->
+                <div class="confidence-box" id="drawer-confidence-box">
+                    <div class="confidence-label">AI CONFIDENCE SCORE</div>
+                    <div class="confidence-val" id="drawer-confidence-val">HIGH</div>
+                </div>
+
+                <!-- Incident Alert Box -->
+                <div class="alert-snippet-box">
+                    <div class="snippet-title">ALERT DESCRIPTION</div>
+                    <div class="snippet-content" id="drawer-alert-content">Loading alert info...</div>
+                </div>
+
+                <!-- RCA Report Markdown Section -->
+                <div class="rca-report-section">
+                    <div class="section-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                        Root Cause Analysis & Diagnosis
+                    </div>
+                    <div class="markdown-output" id="drawer-rca-output">
+                        <div class="analyzing-state">
+                            <span class="spinner"></span> Running LangGraph RAG Agent on Groq Llama-3.3-70B...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
