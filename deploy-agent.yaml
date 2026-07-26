@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: devops-incident-agent-sa
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devops-incident-agent-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devops-incident-agent-rb
+subjects:
+  - kind: ServiceAccount
+    name: devops-incident-agent-sa
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: devops-incident-agent-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devops-incident-agent
+  namespace: default
+  labels:
+    app: devops-incident-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: devops-incident-agent
+  template:
+    metadata:
+      labels:
+        app: devops-incident-agent
+    spec:
+      serviceAccountName: devops-incident-agent-sa
+      containers:
+        - name: devops-agent
+          image: devops-incident-agent:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devops-agent-secrets
+                  key: GROQ_API_KEY
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: devops-incident-agent
+  namespace: default
+spec:
+  selector:
+    app: devops-incident-agent
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
