@@ -1,11 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        // Reference the secret text credential set in Jenkins with ID 'GROQ_API_KEY'
-        GROQ_API_KEY = credentials('GROQ_API_KEY')
-    }
-
     stages {
         stage('Checkout') {
             steps {
@@ -25,8 +20,12 @@ pipeline {
                                 exit 1
                             fi
                         '''
-                        // Create or replace the secret safely – the variable is expanded by the shell, not Groovy
-                        sh "kubectl create secret generic devops-agent-secrets --from-literal=GROQ_API_KEY=${GROQ_API_KEY} --dry-run=client -o yaml | kubectl apply -f -"
+                        // Create or replace the secret safely – let the shell expand the variable
+                        sh '''
+                            kubectl create secret generic devops-agent-secrets \
+                                --from-literal=GROQ_API_KEY=$GROQ_API_KEY \
+                                --dry-run=client -o yaml | kubectl apply -f -
+                        '''
                     }
                 }
             }
@@ -36,10 +35,9 @@ pipeline {
             steps {
                 script {
                     echo "Building Docker image inside Minikube's daemon..."
-                    // Point Docker to Minikube's daemon and build the image
                     sh """
-                    eval \$(minikube -p minikube docker-env)
-                    docker build -t devops-incident-agent:latest .
+                        eval \$(minikube -p minikube docker-env)
+                        docker build -t devops-incident-agent:latest .
                     """
                 }
             }
