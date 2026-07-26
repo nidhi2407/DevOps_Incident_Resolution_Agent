@@ -303,12 +303,13 @@
 
                 <!-- Auto-Fix Action Card -->
                 <div class="autofix-card" id="autofix-card" style="display: none;">
-                    <div class="autofix-header">
+                    <div class="autofix-header" id="autofix-header">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                        <span>Auto-Fix Available</span>
+                        <span id="autofix-header-text">Auto-Fix Available</span>
                     </div>
                     <div class="autofix-reason" id="autofix-reason">Restart the deployment to recover from CrashLoopBackOff.</div>
-                    <div class="autofix-meta">
+                    <div class="autofix-steps-container" id="autofix-steps-container"></div>
+                    <div class="autofix-meta" id="autofix-meta">
                         <span class="autofix-action-badge" id="autofix-action-badge">restart_deployment</span>
                         <span style="color: var(--text-muted); font-size: 11px;">Low-risk • Human-approved</span>
                     </div>

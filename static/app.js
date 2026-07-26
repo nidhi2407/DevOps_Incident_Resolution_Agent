@@ -285,28 +285,7 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
         rcaOutput.innerHTML = marked.parse(data.rca || "No RCA generated.");
 
         // ── Auto-Fix Card ──
-        const remediation = data.remediation_action || {};
-        const autofixCard = document.getElementById("autofix-card");
-        const autofixStatus = document.getElementById("autofix-status");
-
-        // Reset status area
-        autofixStatus.className = "autofix-status";
-        autofixStatus.innerHTML = "";
-        document.getElementById("run-autofix-btn").disabled = false;
-
-        if (remediation.action && remediation.action !== "none") {
-            currentRemediation = {
-                action_type: remediation.action,
-                pod_name: podName,
-                namespace: namespace,
-            };
-            document.getElementById("autofix-action-badge").textContent = remediation.action;
-            document.getElementById("autofix-reason").textContent = remediation.reason || "Automated fix recommended by AI agent.";
-            autofixCard.style.display = "block";
-        } else {
-            autofixCard.style.display = "none";
-            currentRemediation = null;
-        }
+        updateAutofixCard(data.remediation_action || {}, podName, namespace);
     } catch (err) {
         rcaOutput.innerHTML = `<div style="color: var(--color-red);">Error generating RCA report: ${err.message}</div>`;
         document.getElementById("autofix-card").style.display = "none";
@@ -498,3 +477,90 @@ async function loadAuditLog() {
         tbody.innerHTML = `<tr><td colspan="7" style="color: var(--color-red); text-align: center; padding: 30px;">Error loading audit log: ${err.message}</td></tr>`;
     }
 }
+
+// ─── Auto-Fix Rendering & Planned Steps ───────────────────────────────────────
+const COMMAND_TEMPLATES = {
+    "restart_deployment": "kubectl rollout restart deployment/{name} -n {namespace}",
+    "delete_pod": "kubectl delete pod {name} -n {namespace} --grace-period=0",
+    "scale_up": "kubectl scale deployment/{name} --replicas=1 -n {namespace}",
+    "scale_down": "kubectl scale deployment/{name} --replicas=0 -n {namespace}",
+    "rollout_undo": "kubectl rollout undo deployment/{name} -n {namespace}"
+};
+
+function updateAutofixCard(remediation, podName, namespace) {
+    const card = document.getElementById("autofix-card");
+    const header = document.getElementById("autofix-header");
+    const reason = document.getElementById("autofix-reason");
+    const stepsContainer = document.getElementById("autofix-steps-container");
+    const meta = document.getElementById("autofix-meta");
+    const runBtn = document.getElementById("run-autofix-btn");
+    const status = document.getElementById("autofix-status");
+
+    // Reset status area
+    status.className = "autofix-status";
+    status.innerHTML = "";
+    runBtn.disabled = false;
+    card.style.display = "block";
+
+    if (remediation.action && remediation.action !== "none") {
+        card.classList.remove("unavailable");
+        
+        // Header
+        header.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <span id="autofix-header-text">Auto-Fix Available</span>
+        `;
+        
+        // Reason
+        reason.textContent = remediation.reason || "Automated fix recommended by AI agent.";
+        
+        // Build steps list
+        const template = COMMAND_TEMPLATES[remediation.action] || "kubectl rollout restart deployment/{name} -n {namespace}";
+        const concreteCommand = template.replace("{name}", podName).replace("{namespace}", namespace);
+        
+        stepsContainer.style.display = "block";
+        stepsContainer.innerHTML = `
+            <div class="planned-steps">
+                <div class="steps-title">Planned Steps:</div>
+                <ul class="steps-list">
+                    <li><span class="step-num">1.</span> Verify action safety & whitelist context</li>
+                    <li><span class="step-num">2.</span> Execute command: <code class="step-code">${concreteCommand}</code></li>
+                    <li><span class="step-num">3.</span> Poll pod health verification loop (until Running & Ready)</li>
+                </ul>
+            </div>
+        `;
+        
+        // Meta & badge
+        meta.style.display = "flex";
+        document.getElementById("autofix-action-badge").textContent = remediation.action;
+        
+        // Button
+        runBtn.style.display = "flex";
+        
+        currentRemediation = {
+            action_type: remediation.action,
+            pod_name: podName,
+            namespace: namespace,
+        };
+    } else {
+        card.classList.add("unavailable");
+        
+        // Header
+        header.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span id="autofix-header-text" style="color: #f59e0b; font-weight: 600;">No Clear Auto-Fix Available</span>
+        `;
+        
+        // Reason (why no automated remediation is possible)
+        reason.textContent = remediation.reason || "This issue requires manual intervention (such as modifying cluster configurations or scheduling limits) and cannot be safely resolved via restart, deletion, or rollback.";
+        
+        // Hide steps, metadata, and run button
+        stepsContainer.style.display = "none";
+        stepsContainer.innerHTML = "";
+        meta.style.display = "none";
+        runBtn.style.display = "none";
+        
+        currentRemediation = null;
+    }
+}
+

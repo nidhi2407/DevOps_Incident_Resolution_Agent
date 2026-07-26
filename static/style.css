@@ -927,3 +927,57 @@ body {
 .verify-badge.timeout   { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
 .verify-badge.skipped   { background: rgba(113,113,122,0.15); color: #71717a; border: 1px solid rgba(113,113,122,0.3); }
 
+/* ─── Steps Preview & Card States ─────────────────────────────────────────── */
+.planned-steps {
+    margin: 14px 0;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+}
+
+.steps-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+}
+
+.steps-list {
+    list-style: none;
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.step-num {
+    color: #10a37f;
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+.step-code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+/* Card States */
+.autofix-card.unavailable {
+    border-color: rgba(245, 158, 11, 0.25);
+    background: linear-gradient(135deg, rgba(245,158,11,0.04), rgba(245,158,11,0.01));
+}
+
+.autofix-card.unavailable::before {
+    background: radial-gradient(ellipse at top left, rgba(245,158,11,0.08), transparent 60%);
+}
+
+
