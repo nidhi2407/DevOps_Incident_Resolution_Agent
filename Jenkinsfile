@@ -20,6 +20,8 @@ pipeline {
                                 exit 1
                             fi
                         '''
+                        // Switch to Docker Desktop Kubernetes context (if available)
+                        sh 'kubectl config use-context docker-desktop'
                         // Create or replace the secret safely – let the shell expand the variable
                         sh '''
                             kubectl create secret generic devops-agent-secrets \
@@ -35,10 +37,17 @@ pipeline {
             steps {
                 script {
                     echo "Building Docker image inside Minikube's daemon..."
-                    sh """
-                        eval \$(minikube -p minikube docker-env)
+                    // Verify Docker CLI is available inside the container
+                    sh '''
+                        if ! command -v docker > /dev/null 2>&1; then
+                            echo "ERROR: docker CLI not installed in Jenkins container"
+                            exit 1
+                        fi
+                    '''
+                    // Build the Docker image using the host Docker daemon (mounted socket)
+                    sh '''
                         docker build -t devops-incident-agent:latest .
-                    """
+                    '''
                 }
             }
         }

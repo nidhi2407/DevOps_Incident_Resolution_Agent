@@ -1,21 +1,22 @@
 version: '3.8'
 services:
   jenkins:
-    image: jenkins/jenkins:lts
+    image: devops-jenkins
     restart: unless-stopped
     ports:
       - "8080:8080"
       - "50000:50000"
+    privileged: true
     volumes:
       - jenkins_home:/var/jenkins_home
-      # Mount host Minikube kube config into Jenkins container
-      - "C:/Users/hp/.minikube:/var/jenkins_home/.kube"
-      # Mount host kubectl binary for use inside Jenkins
-      - "C:/Program Files/Docker/Docker/resources/bin/kubectl.exe:/usr/local/bin/kubectl"
+      - "C:/Users/hp/.kube:/var/jenkins_home/.kube"
+      # Removed Windows kubectl mount (will install Linux binary inside container)
+      - "/var/run/docker.sock:/var/run/docker.sock"
     environment:
-      # No runSetupWizard flag, so Jenkins UI will show the initial setup wizard
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
-      # Point kube config to the mounted location inside container
       - KUBECONFIG=/var/jenkins_home/.kube/config
+      - MINIKUBE_IN_DOCKER=true
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - MINIKUBE_DRIVER=docker
 volumes:
   jenkins_home:
