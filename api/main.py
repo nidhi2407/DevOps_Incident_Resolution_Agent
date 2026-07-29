@@ -211,3 +211,91 @@ def run_remediation(req: RemediationRequest):
 def get_remediation_history():
     """Return the audit log of all remediation actions executed this session."""
     return {"history": list(reversed(remediation_history))}
+
+@app.get("/pods/status/{namespace}/{pod_name}")
+def get_pod_status(namespace: str, pod_name: str):
+    """
+    Return the live status of a specific pod.
+    Used by the UI to verify real recovery after an autofix action.
+    """
+    try:
+        from kubernetes import client, config
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
+
+        v1 = client.CoreV1Api()
+
+        # For standalone pods (delete_pod action) look up by exact name
+        try:
+            pod = v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+            phase = pod.status.phase or "Unknown"
+            statuses = pod.status.container_statuses or []
+            ready_count = sum(1 for s in statuses if s.ready)
+            total_count = len(statuses) if statuses else 1
+            is_running = (phase == "Running") and (ready_count == total_count)
+            status_reason = phase
+            for s in statuses:
+                if not s.ready:
+                    if s.state.waiting:
+                        status_reason = s.state.waiting.reason or phase
+                    elif s.state.terminated:
+                        status_reason = s.state.terminated.reason or phase
+            return {
+                "found": True,
+                "pod_name": pod_name,
+                "namespace": namespace,
+                "status": status_reason,
+                "phase": phase,
+                "ready": f"{ready_count}/{total_count}",
+                "is_running": is_running,
+            }
+        except Exception:
+            pass
+
+        # For deployments (restart_deployment / rollout_undo) find replacement pods by label
+        pods = v1.list_namespaced_pod(
+            namespace=namespace,
+            label_selector=f"app={pod_name.rsplit('-', 2)[0]}"
+        )
+        if not pods.items:
+            # Broader search — any pod whose name starts with the deployment name prefix
+            all_pods = v1.list_namespaced_pod(namespace=namespace)
+            # Extract deployment name: strip the last two hash segments
+            parts = pod_name.rsplit('-', 2)
+            prefix = parts[0] if len(parts) >= 3 else pod_name
+            matching = [p for p in all_pods.items if p.metadata.name.startswith(prefix)]
+            pods.items = matching
+
+        if pods.items:
+            # Return the newest pod's status
+            newest = sorted(pods.items, key=lambda p: p.metadata.creation_timestamp or 0, reverse=True)[0]
+            phase = newest.status.phase or "Unknown"
+            statuses = newest.status.container_statuses or []
+            ready_count = sum(1 for s in statuses if s.ready)
+            total_count = len(statuses) if statuses else 1
+            is_running = (phase == "Running") and (ready_count == total_count)
+            status_reason = phase
+            for s in statuses:
+                if not s.ready:
+                    if s.state.waiting:
+                        status_reason = s.state.waiting.reason or phase
+                    elif s.state.terminated:
+                        status_reason = s.state.terminated.reason or phase
+            return {
+                "found": True,
+                "pod_name": newest.metadata.name,
+                "namespace": namespace,
+                "status": status_reason,
+                "phase": phase,
+                "ready": f"{ready_count}/{total_count}",
+                "is_running": is_running,
+            }
+
+        return {"found": False, "pod_name": pod_name, "namespace": namespace,
+                "status": "NotFound", "is_running": False}
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+

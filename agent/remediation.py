@@ -94,11 +94,13 @@ def _build_command(action_type: str, pod_name: str, namespace: str, replicas: in
 
 
 def _is_k8s_connected() -> bool:
-    """Check if Kubernetes kubeconfig is loaded and cluster is reachable."""
+    """Check if Kubernetes is reachable (in-cluster or via kubeconfig)."""
     try:
         from kubernetes import config, client
-        config.load_kube_config()
-        # Ping the API server with a short timeout
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
         client.CoreV1Api().list_namespace(timeout_seconds=2)
         return True
     except Exception:
