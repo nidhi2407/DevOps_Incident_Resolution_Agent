@@ -639,9 +639,11 @@ body {
 
 .rca-drawer {
     position: fixed;
-    top: 0; right: -580px; bottom: 0;
+    top: 0; right: -600px; bottom: 0;
     width: 560px;
-    height: 100vh;                /* fill full viewport height */
+    max-width: 95vw;
+    height: 100vh;
+    height: 100dvh;               /* dynamic viewport height */
     background: var(--bg-header);
     border-left: 1px solid var(--border-strong);
     z-index: 101;
@@ -650,6 +652,7 @@ body {
     transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: -10px 0 40px rgba(0,0,0,0.8);
     overflow: hidden;             /* clip at edges; body scrolls internally */
+    box-sizing: border-box;
 }
 .rca-drawer.active { right: 0; }
 
@@ -659,6 +662,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    flex-shrink: 0;               /* CRITICAL: header never squashes or pushes body out */
 }
 
 .drawer-badge {
@@ -678,23 +682,25 @@ body {
     color: var(--text-muted);
     font-size: 24px;
     cursor: pointer;
+    line-height: 1;
 }
 .close-drawer-btn:hover { color: var(--text-primary); }
 
 .drawer-body {
     padding: 20px;
-    padding-bottom: 60px;         /* extra bottom padding so Run button is never clipped */
-    overflow-y: scroll;           /* always show scrollbar, no layout shift */
+    padding-bottom: 100px;        /* 100px bottom padding guarantees Auto-Fix card & button are 100% visible & scrollable */
+    overflow-y: auto;             /* smooth scrollbar */
     overflow-x: hidden;
-    flex: 1 1 0;
+    flex: 1 1 0%;
     min-height: 0;                /* CRITICAL: allows flex child to shrink below content size */
     display: flex;
     flex-direction: column;
     gap: 16px;
     scroll-behavior: smooth;
+    box-sizing: border-box;
     /* custom scrollbar */
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.15) transparent;
+    scrollbar-color: rgba(255,255,255,0.2) transparent;
 }
 
 .drawer-body::-webkit-scrollbar {
@@ -807,6 +813,11 @@ body {
     background: linear-gradient(135deg, rgba(16,163,127,0.07), rgba(16,163,127,0.02));
     padding: 18px;
     position: relative;
+    flex-shrink: 0;               /* Card never squashes or shrinks unexpectedly */
+    max-width: 100%;
+    box-sizing: border-box;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .autofix-card::before {
