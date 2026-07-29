@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy requirements and install python packages
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install -r requirements.txt
 
 # Set HuggingFace cache directory inside /app so downloaded models are saved in the image
 ENV HF_HOME=/app/.cache/huggingface

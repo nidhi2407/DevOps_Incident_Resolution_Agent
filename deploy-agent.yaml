@@ -62,6 +62,8 @@ spec:
                 secretKeyRef:
                   name: devops-agent-secrets
                   key: GROQ_API_KEY
+            - name: PYTHONUNBUFFERED
+              value: "1"
 ---
 apiVersion: v1
 kind: Service
