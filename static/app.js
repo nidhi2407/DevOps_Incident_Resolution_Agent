@@ -142,7 +142,7 @@ function renderPodsTable() {
 
         const actionBtnHtml = !pod.is_healthy
             ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' is failing')}\`)">⚡ Analyze RCA</button>`
-            : `<button class="btn-view" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', 'Running', 'Pod is healthy and operational.')">Inspect</button>`;
+            : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
 
         tr.innerHTML = `
             <td><span class="status-dot ${statusDotClass}"></span></td>
