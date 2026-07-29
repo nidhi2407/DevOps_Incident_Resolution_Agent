@@ -141,7 +141,7 @@ function renderPodsTable() {
         }
 
         const actionBtnHtml = !pod.is_healthy
-            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' is failing')}\`)">⚡ Analyze RCA</button>`
+            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}')">⚡ Analyze RCA</button>`
             : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
 
         tr.innerHTML = `
@@ -189,7 +189,7 @@ function renderIncidentsGrid() {
                 </div>
             </div>
             <div class="incident-body">${pod.alert || pod.status_reason || 'Pod unhealthy'}</div>
-            <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' unhealthy')}\`)">
+            <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}')">
                 ⚡ Run OpenAI RAG Root Cause Analysis
             </button>
         `;
