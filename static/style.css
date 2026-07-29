@@ -683,13 +683,32 @@ body {
 
 .drawer-body {
     padding: 20px;
-    padding-bottom: 40px;         /* ensure Run button is never clipped */
-    overflow-y: auto;             /* this element scrolls */
-    flex: 1;
+    padding-bottom: 60px;         /* extra bottom padding so Run button is never clipped */
+    overflow-y: scroll;           /* always show scrollbar, no layout shift */
+    overflow-x: hidden;
+    flex: 1 1 0;
     min-height: 0;                /* CRITICAL: allows flex child to shrink below content size */
     display: flex;
     flex-direction: column;
     gap: 16px;
+    scroll-behavior: smooth;
+    /* custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.drawer-body::-webkit-scrollbar {
+    width: 5px;
+}
+.drawer-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+.drawer-body::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 10px;
+}
+.drawer-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.3);
 }
 
 .confidence-box {
@@ -788,7 +807,6 @@ body {
     background: linear-gradient(135deg, rgba(16,163,127,0.07), rgba(16,163,127,0.02));
     padding: 18px;
     position: relative;
-    overflow: hidden;
 }
 
 .autofix-card::before {
