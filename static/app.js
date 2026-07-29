@@ -462,10 +462,12 @@ async function runAutoFix() {
                 return;
             }
 
-            // 2. Hard Failure case: Pod explicitly returned to an error state after restart
-            if (HARD_FAIL.includes(actualStatus)) {
-                // Give it one extra poll check to make sure it's not just a transient status reading
-                await new Promise(r => setTimeout(r, 2000));
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+            // 2. Hard Failure case: Pod is still in error state AFTER giving K8s 15s to re-initialize
+            if (HARD_FAIL.includes(actualStatus) && elapsed >= 15) {
+                // Confirm with a second check 3s later
+                await new Promise(r => setTimeout(r, 3000));
                 let recheck;
                 try {
                     const r2 = await fetch(`/pods/status/${namespace}/${podName}`);
@@ -475,13 +477,13 @@ async function runAutoFix() {
                 }
 
                 const finalStatus = recheck.status || actualStatus;
-                if (HARD_FAIL.includes(finalStatus)) {
+                if (HARD_FAIL.includes(finalStatus) && !recheck.is_running) {
                     statusEl.className = "autofix-status error";
                     statusEl.innerHTML = `
                         <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
                         Pod <code>${recheck.pod_name || podName}</code> is currently
                         <strong style="color:#f87171">${finalStatus}</strong>
-                        (${recheck.ready || "0/1"} Ready).<br>
+                        (${recheck.ready || "0/1"} Ready) in namespace <code>${namespace}</code>.<br>
                         <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
                     `;
                     btn.disabled = false;
