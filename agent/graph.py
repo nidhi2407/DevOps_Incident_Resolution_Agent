@@ -11,9 +11,21 @@ os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 load_dotenv()
 
-embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
-vectordb = Chroma(persist_directory="data/chroma_db", embedding_function=embeddings)
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+_vectordb = None
+_llm = None
+
+def get_vectordb():
+    global _vectordb
+    if _vectordb is None:
+        embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-en-v1.5")
+        _vectordb = Chroma(persist_directory="data/chroma_db", embedding_function=embeddings)
+    return _vectordb
+
+def get_llm():
+    global _llm
+    if _llm is None:
+        _llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    return _llm
 
 VAGUE_STATUS_REASONS = {
     "error",
@@ -65,7 +77,7 @@ def _extract_log_evidence(logs):
 
 
 def retrieve_node(state: AgentState) -> AgentState:
-    docs = vectordb.similarity_search(state["alert"], k=3)
+    docs = get_vectordb().similarity_search(state["alert"], k=3)
     state["context"] = [d.page_content for d in docs]
     return state
 
@@ -100,7 +112,7 @@ def _extract_remediation_action(text: str) -> dict:
 
 
 def analyze_node(state: AgentState) -> AgentState:
-    chain = RCA_PROMPT | llm
+    chain = RCA_PROMPT | get_llm()
     response = chain.invoke({
         "context": _join(state.get("context")),
         "diagnostics": _join(state.get("diagnostics")),
@@ -114,6 +126,7 @@ def analyze_node(state: AgentState) -> AgentState:
     state["confidence"] = _extract_confidence(text)
     state["remediation_action"] = _extract_remediation_action(text)
     return state
+
 
 
 def _status_is_vague(state: AgentState) -> bool:
@@ -179,7 +192,7 @@ def route_after_analyze(state: AgentState) -> str:
 
 def retry_node(state: AgentState) -> AgentState:
     state["retry_count"] = state.get("retry_count", 0) + 1
-    docs = vectordb.similarity_search(state["alert"], k=5)
+    docs = get_vectordb().similarity_search(state["alert"], k=5)
     state["context"] = [d.page_content for d in docs]
     return state
 
