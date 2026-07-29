@@ -284,10 +284,20 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
             return;
         }
 
-        confidenceVal.textContent = (data.confidence || "MEDIUM").toUpperCase();
-        if (data.confidence === "High") confidenceVal.style.color = "var(--color-openai-green)";
-        else if (data.confidence === "Medium") confidenceVal.style.color = "var(--color-amber)";
-        else confidenceVal.style.color = "var(--color-red)";
+        const confidenceReasonEl = document.getElementById("drawer-confidence-reason");
+        const conf = data.confidence || "Medium";
+        confidenceVal.textContent = conf.toUpperCase();
+
+        if (conf === "High") {
+            confidenceVal.style.color = "var(--color-openai-green)";
+            if (confidenceReasonEl) confidenceReasonEl.textContent = "Exact SRE runbook match + verified log evidence";
+        } else if (conf === "Medium") {
+            confidenceVal.style.color = "var(--color-amber)";
+            if (confidenceReasonEl) confidenceReasonEl.textContent = "Configuration adjustment required (e.g. DNS / ConfigMap)";
+        } else {
+            confidenceVal.style.color = "var(--color-red)";
+            if (confidenceReasonEl) confidenceReasonEl.textContent = "Ambiguous failure telemetry or missing log traces";
+        }
 
         rcaOutput.innerHTML = marked.parse(data.rca || "No RCA generated.");
 
