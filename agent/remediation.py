@@ -129,39 +129,89 @@ def _run_kubectl(command: str) -> tuple[bool, str, str]:
         return False, "", str(e)
 
 
-def verify_pod_recovery(pod_name: str, namespace: str, timeout_seconds: int = 60) -> tuple[str, str]:
+def verify_pod_recovery(pod_name: str, namespace: str, timeout_seconds: int = 45) -> tuple[str, str]:
     """
-    Poll pod status for up to `timeout_seconds` to verify recovery.
+    Poll live Kubernetes status for up to `timeout_seconds` to verify true recovery.
     Returns (status: 'recovered'|'failed'|'timeout', message).
     """
+    try:
+        from kubernetes import client, config
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
+        v1 = client.CoreV1Api()
+    except Exception:
+        v1 = None
+
+    # Wait 5 seconds initially for K8s to trigger rollout or deletion
+    time.sleep(5)
     start = time.time()
-    check_cmd = f"kubectl get pod {pod_name} -n {namespace} --no-headers"
+
+    HARD_FAIL_REASONS = {
+        "CrashLoopBackOff", "OOMKilled", "Error", "ImagePullBackOff",
+        "ErrImagePull", "RunContainerError", "CreateContainerConfigError"
+    }
 
     while time.time() - start < timeout_seconds:
-        success, stdout, stderr = _run_kubectl(check_cmd)
+        current_status = "Unknown"
+        ready_str = "0/1"
+        is_running = False
+        target_pod_name = pod_name
 
-        if not success:
-            # Pod may have been deleted and not yet recreated
-            time.sleep(5)
-            continue
+        if v1:
+            try:
+                # Find newest matching pod for deployment or exact pod for standalone
+                prefix = pod_name.rsplit("-", 2)[0] if pod_name.count("-") >= 2 else pod_name
+                pods = v1.list_namespaced_pod(namespace=namespace)
+                matching = [p for p in pods.items if p.metadata.name.startswith(prefix)]
 
-        if stdout:
-            parts = stdout.split()
-            if len(parts) >= 3:
-                ready = parts[1]       # e.g. "1/1"
-                status = parts[2]      # e.g. "Running"
+                if matching:
+                    newest = sorted(matching, key=lambda p: p.metadata.creation_timestamp or 0, reverse=True)[0]
+                    target_pod_name = newest.metadata.name
+                    phase = newest.status.phase or "Unknown"
+                    statuses = newest.status.container_statuses or []
+                    ready_count = sum(1 for s in statuses if s.ready)
+                    total_count = len(statuses) if statuses else 1
+                    ready_str = f"{ready_count}/{total_count}"
 
-                if status == "Running" and "/" in ready:
-                    total_str, ready_str = ready.split("/")[1], ready.split("/")[0]
-                    if ready_str == total_str:
-                        return "recovered", f"Pod {pod_name} is now Running ({ready} Ready)."
+                    status_reason = phase
+                    for s in statuses:
+                        if not s.ready:
+                            if s.state.waiting:
+                                status_reason = s.state.waiting.reason or phase
+                            elif s.state.terminated:
+                                status_reason = s.state.terminated.reason or phase
 
-                if status in ("Error", "CrashLoopBackOff", "OOMKilled"):
-                    return "failed", f"Pod {pod_name} is still failing with status: {status}."
+                    current_status = status_reason
+                    is_running = (phase == "Running") and (ready_count == total_count)
+            except Exception as e:
+                logger.warning(f"Error querying K8s API during verification: {e}")
+        else:
+            # Fallback to kubectl command
+            success, stdout, _ = _run_kubectl(f"kubectl get pod {pod_name} -n {namespace} --no-headers")
+            if stdout:
+                parts = stdout.split()
+                if len(parts) >= 3:
+                    ready_str = parts[1]
+                    current_status = parts[2]
+                    if current_status == "Running" and "/" in ready_str:
+                        r_cur, r_tot = ready_str.split("/")
+                        if r_cur == r_tot:
+                            is_running = True
 
-        time.sleep(5)
+        # Check recovery success condition
+        if is_running:
+            time.sleep(2)
+            return "recovered", f"Pod {target_pod_name} is Running ({ready_str} Ready) in namespace {namespace}."
 
-    return "timeout", f"Pod {pod_name} did not recover within {timeout_seconds}s. Manual investigation required."
+        # Check hard failure condition (give K8s 10s to start container)
+        if current_status in HARD_FAIL_REASONS and (time.time() - start) >= 10:
+            return "failed", f"Recovery Failed — Human Intervention Required: Pod {target_pod_name} is still failing with status: {current_status} ({ready_str} Ready)."
+
+        time.sleep(4)
+
+    return "failed", f"Recovery Failed — Human Intervention Required: Pod {pod_name} did not reach Running state within {timeout_seconds}s (Status: {current_status})."
 
 
 def execute_remediation(
