@@ -448,7 +448,7 @@ async function runAutoFix() {
                 `;
                 btn.disabled = false;
                 loadAuditLog();
-                fetchPodsData(); // refresh dashboard
+                fetchClusterData(); // refresh dashboard
                 return;
             }
 
@@ -476,7 +476,7 @@ async function runAutoFix() {
                     `;
                     btn.disabled = false;
                     loadAuditLog();
-                    fetchPodsData(); // refresh dashboard
+                    fetchClusterData(); // refresh dashboard
                     return;
                 }
             }
@@ -501,7 +501,7 @@ async function runAutoFix() {
         `;
         btn.disabled = false;
         loadAuditLog();
-        fetchPodsData();
+        fetchClusterData();
 
     } catch (err) {
         statusEl.className = "autofix-status error";
