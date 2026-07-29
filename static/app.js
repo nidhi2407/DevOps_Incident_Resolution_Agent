@@ -408,60 +408,100 @@ async function runAutoFix() {
             return;
         }
 
-        // ── Command executed — wait 5s then do ONE real status check ──────────
+        // ── Real-time verification: poll live K8s status until completion ──────────
         const podName = currentRemediation.pod_name;
         const namespace = currentRemediation.namespace;
+        const maxWaitSeconds = 120;
+        const intervalMs = 3000;
+        const startTime = Date.now();
 
         statusEl.className = "autofix-status loading";
         statusEl.innerHTML = `
             <span class="spinner"></span>
-            <span>Command applied: <code>${result.command}</code><br>
-            Verifying pod status in 5s…</span>`;
+            <span>Applied <code>${result.command}</code><br>
+            Verifying cluster recovery status…</span>`;
 
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Poll loop until final state or timeout
+        while ((Date.now() - startTime) < (maxWaitSeconds * 1000)) {
+            await new Promise(r => setTimeout(r, intervalMs));
 
-        let podStatus;
-        try {
-            const r = await fetch(`/pods/status/${namespace}/${podName}`);
-            podStatus = await r.json();
-        } catch (_) {
-            podStatus = { is_running: false, status: "Unknown", found: false };
+            let podStatus;
+            try {
+                const r = await fetch(`/pods/status/${namespace}/${podName}`);
+                podStatus = await r.json();
+            } catch (_) {
+                podStatus = { is_running: false, status: "Unknown", found: false };
+            }
+
+            const actualStatus = podStatus.status || "Unknown";
+            const isRunning = podStatus.is_running;
+            const HARD_FAIL = ["CrashLoopBackOff", "OOMKilled", "Error", "ImagePullBackOff", "ErrImagePull"];
+
+            // 1. Success case: Pod is up and Running + Ready
+            if (isRunning) {
+                statusEl.className = "autofix-status success";
+                statusEl.innerHTML = `
+                    <strong>✅ Recovery Confirmed</strong><br>
+                    Pod <code>${podStatus.pod_name}</code> is live and <strong>Running</strong>
+                    (${podStatus.ready} Ready) in namespace <code>${namespace}</code>.<br>
+                    <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
+                `;
+                btn.disabled = false;
+                loadAuditLog();
+                fetchPodsData(); // refresh dashboard
+                return;
+            }
+
+            // 2. Hard Failure case: Pod explicitly returned to an error state after restart
+            if (HARD_FAIL.includes(actualStatus)) {
+                // Give it one extra poll check to make sure it's not just a transient status reading
+                await new Promise(r => setTimeout(r, 2000));
+                let recheck;
+                try {
+                    const r2 = await fetch(`/pods/status/${namespace}/${podName}`);
+                    recheck = await r2.json();
+                } catch (_) {
+                    recheck = podStatus;
+                }
+
+                const finalStatus = recheck.status || actualStatus;
+                if (HARD_FAIL.includes(finalStatus)) {
+                    statusEl.className = "autofix-status error";
+                    statusEl.innerHTML = `
+                        <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
+                        Pod <code>${recheck.pod_name || podName}</code> is currently
+                        <strong style="color:#f87171">${finalStatus}</strong>
+                        (${recheck.ready || "0/1"} Ready).<br>
+                        <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
+                    `;
+                    btn.disabled = false;
+                    loadAuditLog();
+                    fetchPodsData(); // refresh dashboard
+                    return;
+                }
+            }
+
+            // 3. Transient / Still in progress (ContainerCreating, Pending, etc.)
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            statusEl.className = "autofix-status loading";
+            statusEl.innerHTML = `
+                <span class="spinner"></span>
+                <span>
+                    Command applied: <code>${result.command}</code><br>
+                    Status: <strong style="color:#fbbf24">${actualStatus}</strong> (${podStatus.ready || "0/1"} Ready) — waiting for cluster stability (${elapsed}s elapsed)…
+                </span>`;
         }
 
-        const actualStatus = podStatus.status || "Unknown";
-        const HARD_FAIL = ["CrashLoopBackOff", "OOMKilled", "Error", "ImagePullBackOff", "ErrImagePull"];
-
-        if (podStatus.is_running) {
-            statusEl.className = "autofix-status success";
-            statusEl.innerHTML = `
-                <strong>✅ Recovery Confirmed</strong><br>
-                Pod <code>${podStatus.pod_name}</code> is <strong>Running</strong>
-                (${podStatus.ready} Ready) in namespace <code>${namespace}</code>.<br>
-                <small style="color:var(--text-muted)">Command: <code>${result.command}</code></small>
-            `;
-        } else if (HARD_FAIL.includes(actualStatus)) {
-            statusEl.className = "autofix-status error";
-            statusEl.innerHTML = `
-                <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
-                Pod <code>${podStatus.pod_name || podName}</code> is
-                <strong style="color:#f87171">${actualStatus}</strong>
-                (${podStatus.ready || "0/1"} Ready).<br>
-                <small style="color:var(--text-muted)">Command: <code>${result.command}</code></small>
-            `;
-        } else {
-            statusEl.className = "autofix-status warning";
-            statusEl.innerHTML = `
-                <strong>⚙️ Command Applied — Recovery in Progress</strong><br>
-                Pod <code>${podStatus.pod_name || podName}</code> is currently
-                <strong style="color:#fbbf24">${actualStatus}</strong>
-                (${podStatus.ready || "0/1"} Ready).<br>
-                Kubernetes is restarting the pod — check the dashboard in ~60s.<br>
-                <small style="color:var(--text-muted)">Command: <code>${result.command}</code></small>
-            `;
-        }
-
+        // Timeout reached without reaching Running or hard failure
+        statusEl.className = "autofix-status error";
+        statusEl.innerHTML = `
+            <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
+            Pod <code>${podName}</code> did not reach Running state after ${maxWaitSeconds}s.<br>
+            <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
+        `;
         btn.disabled = false;
         loadAuditLog();
+        fetchPodsData();
 
     } catch (err) {
         statusEl.className = "autofix-status error";
