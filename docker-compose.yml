@@ -2,6 +2,9 @@ version: '3.8'
 services:
   jenkins:
     image: devops-jenkins
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
     user: root
     restart: unless-stopped
     ports:
