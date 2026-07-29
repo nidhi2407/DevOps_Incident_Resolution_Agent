@@ -10,7 +10,12 @@ SECRET_PATTERN = re.compile(
 
 
 def _load_core_v1():
-    config.load_kube_config()
+    try:
+        # Running inside a Kubernetes pod — use the mounted service account token
+        config.load_incluster_config()
+    except config.ConfigException:
+        # Running locally — use ~/.kube/config
+        config.load_kube_config()
     return client.CoreV1Api()
 
 
