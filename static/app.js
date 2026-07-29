@@ -141,8 +141,8 @@ function renderPodsTable() {
         }
 
         const actionBtnHtml = !pod.is_healthy
-            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' is failing')}\`)">⚡ Analyze RCA</button>`
-            : `<button class="btn-view" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', 'Running', 'Pod is healthy and operational.')">Inspect</button>`;
+            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}')">⚡ Analyze RCA</button>`
+            : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
 
         tr.innerHTML = `
             <td><span class="status-dot ${statusDotClass}"></span></td>
@@ -244,6 +244,11 @@ async function scanAndAnalyzeAll() {
 
 // Open OpenAI Slide-over RCA Drawer
 async function openRcaForPod(podName, namespace, statusReason, alertText) {
+    if (!alertText) {
+        const foundPod = (rawPodsData || []).find(p => p.pod_name === podName && p.namespace === namespace);
+        alertText = (foundPod && foundPod.alert) ? foundPod.alert : `Pod ${podName} in namespace ${namespace} is status ${statusReason || 'Unhealthy'}.`;
+    }
+
     document.getElementById("drawer-pod-name").textContent = podName;
     document.getElementById("drawer-namespace-sub").textContent = `Namespace: ${namespace} • Status: ${statusReason}`;
     document.getElementById("drawer-alert-content").textContent = alertText;
