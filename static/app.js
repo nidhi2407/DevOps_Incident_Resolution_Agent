@@ -22,19 +22,11 @@ if (typeof window.marked === 'undefined' || !window.marked.parse) {
     };
 }
 
-function initApp() {
-    fetchClusterData();
-    if (!autoPollingInterval) {
-        autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
-    }
+// Fetch cluster telemetry immediately on script load
+fetchClusterData();
+if (!autoPollingInterval) {
+    autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
 }
-
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initApp);
-} else {
-    initApp();
-}
-window.addEventListener("load", initApp);
 
 // View Navigation Switcher
 function switchView(viewName) {
