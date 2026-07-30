@@ -154,46 +154,55 @@ function renderPodsTable() {
     }
 
     filtered.forEach(pod => {
-        const tr = document.createElement("tr");
+        try {
+            const tr = document.createElement("tr");
 
-        let statusDotClass = "healthy";
-        let statusBadgeClass = "healthy";
-        if (!pod.is_healthy) {
-            if (pod.status === "Pending") {
-                statusDotClass = "pending";
-                statusBadgeClass = "pending";
-            } else {
-                statusDotClass = "unhealthy";
-                statusBadgeClass = "unhealthy";
+            let statusDotClass = "healthy";
+            let statusBadgeClass = "healthy";
+            if (!pod.is_healthy) {
+                if (pod.status === "Pending") {
+                    statusDotClass = "pending";
+                    statusBadgeClass = "pending";
+                } else {
+                    statusDotClass = "unhealthy";
+                    statusBadgeClass = "unhealthy";
+                }
             }
+
+            const safeName = (pod.pod_name || "").replace(/'/g, "\\'");
+            const safeNs = (pod.namespace || "").replace(/'/g, "\\'");
+            const safeStatus = (pod.status || "").replace(/'/g, "\\'");
+
+            const actionBtnHtml = !pod.is_healthy
+                ? `<button class="btn-rca" onclick="openRcaForPod('${safeName}', '${safeNs}', '${safeStatus}')">⚡ Analyze RCA</button>`
+                : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
+
+            tr.innerHTML = `
+                <td><span class="status-dot ${statusDotClass}"></span></td>
+                <td><span class="pod-name-text">${pod.pod_name}</span></td>
+                <td><span class="ns-tag">${pod.namespace}</span></td>
+                <td><span class="reason-badge ${statusBadgeClass}">${pod.status}</span></td>
+                <td>${pod.ready || "1/1"}</td>
+                <td><span style="color: ${pod.restarts > 3 ? 'var(--color-red)' : 'inherit'}">${pod.restarts}</span></td>
+                <td>${pod.node || "unassigned"}</td>
+                <td>${pod.age || "active"}</td>
+                <td align="right">${actionBtnHtml}</td>
+            `;
+
+            tbody.appendChild(tr);
+        } catch (rowErr) {
+            console.error("Pod row render error:", rowErr, pod);
         }
-
-        const actionBtnHtml = !pod.is_healthy
-            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}')">⚡ Analyze RCA</button>`
-            : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
-
-        tr.innerHTML = `
-            <td><span class="status-dot ${statusDotClass}"></span></td>
-            <td><span class="pod-name-text">${pod.pod_name}</span></td>
-            <td><span class="ns-tag">${pod.namespace}</span></td>
-            <td><span class="reason-badge ${statusBadgeClass}">${pod.status}</span></td>
-            <td>${pod.ready || "1/1"}</td>
-            <td><span style="color: ${pod.restarts > 3 ? 'var(--color-red)' : 'inherit'}">${pod.restarts}</span></td>
-            <td>${pod.node || "unassigned"}</td>
-            <td>${pod.age || "active"}</td>
-            <td align="right">${actionBtnHtml}</td>
-        `;
-
-        tbody.appendChild(tr);
     });
 }
 
 // Render Active Incidents Grid
 function renderIncidentsGrid() {
     const container = document.getElementById("incidents-grid-container");
+    if (!container) return;
     container.innerHTML = "";
 
-    const unhealthy = rawPodsData.filter(p => !p.is_healthy);
+    const unhealthy = (rawPodsData || []).filter(p => p && !p.is_healthy);
     if (unhealthy.length === 0) {
         container.innerHTML = `
             <div style="grid-column: 1/-1; background: var(--bg-card); border: 1px solid var(--border-subtle); padding: 40px; text-align: center; border-radius: 12px; color: var(--text-secondary);">
@@ -206,22 +215,30 @@ function renderIncidentsGrid() {
     }
 
     unhealthy.forEach(pod => {
-        const card = document.createElement("div");
-        card.className = "incident-card";
-        card.innerHTML = `
-            <div class="incident-header">
-                <div>
-                    <span class="reason-badge unhealthy" style="margin-bottom: 6px;">${pod.status}</span>
-                    <div class="incident-pod">${pod.pod_name}</div>
-                    <div style="font-size: 12px; color: var(--text-muted);">Namespace: ${pod.namespace} • Node: ${pod.node}</div>
+        try {
+            const card = document.createElement("div");
+            card.className = "incident-card";
+            const safeName = (pod.pod_name || "").replace(/'/g, "\\'");
+            const safeNs = (pod.namespace || "").replace(/'/g, "\\'");
+            const safeStatus = (pod.status || "").replace(/'/g, "\\'");
+
+            card.innerHTML = `
+                <div class="incident-header">
+                    <div>
+                        <span class="reason-badge unhealthy" style="margin-bottom: 6px;">${pod.status}</span>
+                        <div class="incident-pod">${pod.pod_name}</div>
+                        <div style="font-size: 12px; color: var(--text-muted);">Namespace: ${pod.namespace} • Node: ${pod.node}</div>
+                    </div>
                 </div>
-            </div>
-            <div class="incident-body">${pod.alert || pod.status_reason || 'Pod unhealthy'}</div>
-            <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}')">
-                ⚡ Run OpenAI RAG Root Cause Analysis
-            </button>
-        `;
-        container.appendChild(card);
+                <div class="incident-body">${pod.alert || pod.status_reason || 'Pod unhealthy'}</div>
+                <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="openRcaForPod('${safeName}', '${safeNs}', '${safeStatus}')">
+                    ⚡ Run OpenAI RAG Root Cause Analysis
+                </button>
+            `;
+            container.appendChild(card);
+        } catch (cardErr) {
+            console.error("Incident card render error:", cardErr, pod);
+        }
     });
 }
 
