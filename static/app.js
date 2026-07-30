@@ -141,7 +141,7 @@ function renderPodsTable() {
         }
 
         const actionBtnHtml = !pod.is_healthy
-            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}')">⚡ Analyze RCA</button>`
+            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' is failing')}\`)">⚡ Analyze RCA</button>`
             : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
 
         tr.innerHTML = `
@@ -244,11 +244,6 @@ async function scanAndAnalyzeAll() {
 
 // Open OpenAI Slide-over RCA Drawer
 async function openRcaForPod(podName, namespace, statusReason, alertText) {
-    if (!alertText) {
-        const foundPod = (rawPodsData || []).find(p => p.pod_name === podName && p.namespace === namespace);
-        alertText = (foundPod && foundPod.alert) ? foundPod.alert : `Pod ${podName} in namespace ${namespace} is status ${statusReason || 'Unhealthy'}.`;
-    }
-
     document.getElementById("drawer-pod-name").textContent = podName;
     document.getElementById("drawer-namespace-sub").textContent = `Namespace: ${namespace} • Status: ${statusReason}`;
     document.getElementById("drawer-alert-content").textContent = alertText;
@@ -289,10 +284,20 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
             return;
         }
 
-        confidenceVal.textContent = (data.confidence || "MEDIUM").toUpperCase();
-        if (data.confidence === "High") confidenceVal.style.color = "var(--color-openai-green)";
-        else if (data.confidence === "Medium") confidenceVal.style.color = "var(--color-amber)";
-        else confidenceVal.style.color = "var(--color-red)";
+        const confidenceReasonEl = document.getElementById("drawer-confidence-reason");
+        const conf = data.confidence || "Medium";
+        confidenceVal.textContent = conf.toUpperCase();
+
+        if (conf === "High") {
+            confidenceVal.style.color = "var(--color-openai-green)";
+            if (confidenceReasonEl) confidenceReasonEl.textContent = "Exact SRE runbook match + verified log evidence";
+        } else if (conf === "Medium") {
+            confidenceVal.style.color = "var(--color-amber)";
+            if (confidenceReasonEl) confidenceReasonEl.textContent = "Configuration adjustment required (e.g. DNS / ConfigMap)";
+        } else {
+            confidenceVal.style.color = "var(--color-red)";
+            if (confidenceReasonEl) confidenceReasonEl.textContent = "Ambiguous failure telemetry or missing log traces";
+        }
 
         rcaOutput.innerHTML = marked.parse(data.rca || "No RCA generated.");
 
@@ -397,7 +402,7 @@ async function runAutoFix() {
                 action_type: currentRemediation.action_type,
                 pod_name: currentRemediation.pod_name,
                 namespace: currentRemediation.namespace,
-                verify: true,
+                verify: false,   // we will verify ourselves via /pods/status
             })
         });
 
@@ -409,33 +414,107 @@ async function runAutoFix() {
                 <strong>❌ Execution Failed</strong><br>
                 ${result.error || 'Unknown error occurred.'}
             `;
-        } else {
-            const vs = result.verification_status;
-            if (vs === "recovered") {
+            btn.disabled = false;
+            return;
+        }
+
+        // ── Real-time verification: poll live K8s status until completion ──────────
+        const podName = currentRemediation.pod_name;
+        const namespace = currentRemediation.namespace;
+        const maxWaitSeconds = 120;
+        const intervalMs = 3000;
+        const startTime = Date.now();
+
+        statusEl.className = "autofix-status loading";
+        statusEl.innerHTML = `
+            <span class="spinner"></span>
+            <span>Applied <code>${result.command}</code><br>
+            Verifying cluster recovery status…</span>`;
+
+        // Poll loop until final state or timeout
+        while ((Date.now() - startTime) < (maxWaitSeconds * 1000)) {
+            await new Promise(r => setTimeout(r, intervalMs));
+
+            let podStatus;
+            try {
+                const r = await fetch(`/pods/status/${namespace}/${podName}`);
+                podStatus = await r.json();
+            } catch (_) {
+                podStatus = { is_running: false, status: "Unknown", found: false };
+            }
+
+            const actualStatus = podStatus.status || "Unknown";
+            const isRunning = podStatus.is_running;
+            const HARD_FAIL = ["CrashLoopBackOff", "OOMKilled", "Error", "ImagePullBackOff", "ErrImagePull"];
+
+            // 1. Success case: Pod is up and Running + Ready
+            if (isRunning) {
                 statusEl.className = "autofix-status success";
                 statusEl.innerHTML = `
                     <strong>✅ Recovery Confirmed</strong><br>
-                    Command: <code>${result.command}</code><br>
-                    ${result.verification_msg}
+                    Pod <code>${podStatus.pod_name}</code> is live and <strong>Running</strong>
+                    (${podStatus.ready} Ready) in namespace <code>${namespace}</code>.<br>
+                    <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
                 `;
-            } else if (vs === "failed") {
-                statusEl.className = "autofix-status error";
-                statusEl.innerHTML = `
-                    <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
-                    Command: <code>${result.command}</code><br>
-                    ${result.verification_msg}
-                `;
-            } else {
-                statusEl.className = "autofix-status success";
-                statusEl.innerHTML = `
-                    <strong>✅ Command Executed</strong><br>
-                    <code>${result.command}</code>
-                `;
+                btn.disabled = false;
+                loadAuditLog();
+                fetchClusterData(); // refresh dashboard
+                return;
             }
+
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+
+            // 2. Hard Failure case: Pod is still in error state AFTER giving K8s 15s to re-initialize
+            if (HARD_FAIL.includes(actualStatus) && elapsed >= 15) {
+                // Confirm with a second check 3s later
+                await new Promise(r => setTimeout(r, 3000));
+                let recheck;
+                try {
+                    const r2 = await fetch(`/pods/status/${namespace}/${podName}`);
+                    recheck = await r2.json();
+                } catch (_) {
+                    recheck = podStatus;
+                }
+
+                const finalStatus = recheck.status || actualStatus;
+                if (HARD_FAIL.includes(finalStatus) && !recheck.is_running) {
+                    statusEl.className = "autofix-status error";
+                    statusEl.innerHTML = `
+                        <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
+                        Pod <code>${recheck.pod_name || podName}</code> is currently
+                        <strong style="color:#f87171">${finalStatus}</strong>
+                        (${recheck.ready || "0/1"} Ready) in namespace <code>${namespace}</code>.<br>
+                        <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
+                    `;
+                    btn.disabled = false;
+                    loadAuditLog();
+                    fetchClusterData(); // refresh dashboard
+                    return;
+                }
+            }
+
+            // 3. Transient / Still in progress (ContainerCreating, Pending, etc.)
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            statusEl.className = "autofix-status loading";
+            statusEl.innerHTML = `
+                <span class="spinner"></span>
+                <span>
+                    Command applied: <code>${result.command}</code><br>
+                    Status: <strong style="color:#fbbf24">${actualStatus}</strong> (${podStatus.ready || "0/1"} Ready) — waiting for cluster stability (${elapsed}s elapsed)…
+                </span>`;
         }
+
+        // Timeout reached without reaching Running or hard failure
+        statusEl.className = "autofix-status error";
+        statusEl.innerHTML = `
+            <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
+            Pod <code>${podName}</code> did not reach Running state after ${maxWaitSeconds}s.<br>
+            <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
+        `;
         btn.disabled = false;
         loadAuditLog();
         fetchClusterData();
+
     } catch (err) {
         statusEl.className = "autofix-status error";
         statusEl.innerHTML = `<strong>Network Error:</strong> ${err.message}`;
