@@ -680,3 +680,6 @@ function updateAutofixCard(remediation, podName, namespace) {
     }
 }
 
+// Guarantee execution when app.js loads
+fetchClusterData();
+
