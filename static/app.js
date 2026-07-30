@@ -544,7 +544,6 @@ async function runAutoFix() {
             }
 
             // 3. Transient / Still in progress (ContainerCreating, Pending, etc.)
-            const elapsed = Math.round((Date.now() - startTime) / 1000);
             statusEl.className = "autofix-status loading";
             statusEl.innerHTML = `
                 <span class="spinner"></span>
