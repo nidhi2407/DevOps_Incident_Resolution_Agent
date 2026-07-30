@@ -1,19 +1,40 @@
 // Global State
-let rawPodsData = [];
-let rawStats = {};
-let namespacesList = [];
-let autoPollingInterval = null;
-let currentRemediation = null; // stores {action, pod_name, namespace} for active drawer
+var rawPodsData = [];
+var rawStats = {};
+var namespacesList = [];
+var autoPollingInterval = null;
+var currentRemediation = null;
+
+// Fallback for marked parser if CDN fails or is blocked
+if (typeof window.marked === 'undefined' || !window.marked.parse) {
+    window.marked = {
+        parse: function(text) {
+            if (!text) return "";
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>")
+                .replace(/`([^`]+)`/g, "<code>$1</code>")
+                .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+                .replace(/\n/g, "<br>");
+        }
+    };
+}
+
+function initApp() {
+    fetchClusterData();
+    if (!autoPollingInterval) {
+        autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
+    }
+}
 
 if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-        fetchClusterData();
-        autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
-    });
+    document.addEventListener("DOMContentLoaded", initApp);
 } else {
-    fetchClusterData();
-    autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
+    initApp();
 }
+window.addEventListener("load", initApp);
 
 // View Navigation Switcher
 function switchView(viewName) {
