@@ -5,13 +5,15 @@ let namespacesList = [];
 let autoPollingInterval = null;
 let currentRemediation = null; // stores {action, pod_name, namespace} for active drawer
 
-document.addEventListener("DOMContentLoaded", () => {
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+        fetchClusterData();
+        autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
+    });
+} else {
     fetchClusterData();
-    // Start Grafana 10-second auto-polling
-    autoPollingInterval = setInterval(() => {
-        fetchClusterData(false);
-    }, 10000);
-});
+    autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
+}
 
 // View Navigation Switcher
 function switchView(viewName) {
