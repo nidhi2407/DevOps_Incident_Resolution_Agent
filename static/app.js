@@ -1,32 +1,17 @@
 // Global State
-var rawPodsData = [];
-var rawStats = {};
-var namespacesList = [];
-var autoPollingInterval = null;
-var currentRemediation = null;
+let rawPodsData = [];
+let rawStats = {};
+let namespacesList = [];
+let autoPollingInterval = null;
+let currentRemediation = null; // stores {action, pod_name, namespace} for active drawer
 
-// Fallback for marked parser if CDN fails or is blocked
-if (typeof window.marked === 'undefined' || !window.marked.parse) {
-    window.marked = {
-        parse: function(text) {
-            if (!text) return "";
-            return String(text)
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>")
-                .replace(/`([^`]+)`/g, "<code>$1</code>")
-                .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                .replace(/\n/g, "<br>");
-        }
-    };
-}
-
-// Fetch cluster telemetry immediately on script load
-fetchClusterData();
-if (!autoPollingInterval) {
-    autoPollingInterval = setInterval(() => fetchClusterData(false), 10000);
-}
+document.addEventListener("DOMContentLoaded", () => {
+    fetchClusterData();
+    // Start Grafana 10-second auto-polling
+    autoPollingInterval = setInterval(() => {
+        fetchClusterData(false);
+    }, 10000);
+});
 
 // View Navigation Switcher
 function switchView(viewName) {
@@ -72,42 +57,36 @@ function updateMetricCards(stats) {
     const healthFillEl = document.getElementById("stat-health-fill");
     const healthSubEl = document.getElementById("stat-health-subtext");
 
-    if (healthValEl) healthValEl.textContent = `${healthPct}%`;
-    if (healthFillEl) {
-        healthFillEl.style.width = `${healthPct}%`;
-        if (healthPct < 80) {
-            healthFillEl.style.backgroundColor = "var(--color-red)";
-            if (healthValEl) healthValEl.className = "metric-value red-text";
-            if (healthSubEl) healthSubEl.textContent = "Cluster degradation detected";
-        } else if (healthPct < 95) {
-            healthFillEl.style.backgroundColor = "var(--color-amber)";
-            if (healthValEl) healthValEl.className = "metric-value";
-            if (healthSubEl) healthSubEl.textContent = "Minor warnings present";
-        } else {
-            healthFillEl.style.backgroundColor = "var(--color-openai-green)";
-            if (healthValEl) healthValEl.className = "metric-value green-text";
-            if (healthSubEl) healthSubEl.textContent = "Cluster running optimally";
-        }
+    healthValEl.textContent = `${healthPct}%`;
+    healthFillEl.style.width = `${healthPct}%`;
+
+    if (healthPct < 80) {
+        healthFillEl.style.backgroundColor = "var(--color-red)";
+        healthValEl.className = "metric-value red-text";
+        healthSubEl.textContent = "Cluster degradation detected";
+    } else if (healthPct < 95) {
+        healthFillEl.style.backgroundColor = "var(--color-amber)";
+        healthValEl.className = "metric-value";
+        healthSubEl.textContent = "Minor warnings present";
+    } else {
+        healthFillEl.style.backgroundColor = "var(--color-openai-green)";
+        healthValEl.className = "metric-value green-text";
+        healthSubEl.textContent = "Cluster running optimally";
     }
 
-    const totalEl = document.getElementById("stat-total-pods");
-    if (totalEl) totalEl.textContent = totalPods;
-    const healthyEl = document.getElementById("stat-healthy-pods");
-    if (healthyEl) healthyEl.textContent = healthyPods;
-    const unhealthyEl = document.getElementById("stat-unhealthy-pods");
-    if (unhealthyEl) unhealthyEl.textContent = unhealthyPods;
-    const incCountEl = document.getElementById("incidents-count");
-    if (incCountEl) incCountEl.textContent = unhealthyPods;
+    document.getElementById("stat-total-pods").textContent = totalPods;
+    document.getElementById("stat-healthy-pods").textContent = healthyPods;
+    document.getElementById("stat-unhealthy-pods").textContent = unhealthyPods;
+    document.getElementById("incidents-count").textContent = unhealthyPods;
 }
 
 // Populate Namespace Filter
 function updateNamespaceDropdown(namespaces) {
     const select = document.getElementById("filter-namespace");
-    if (!select) return;
     const currentVal = select.value;
     select.innerHTML = '<option value="all">All Namespaces</option>';
 
-    (namespaces || []).forEach(ns => {
+    namespaces.forEach(ns => {
         const option = document.createElement("option");
         option.value = ns;
         option.textContent = ns;
@@ -119,25 +98,18 @@ function updateNamespaceDropdown(namespaces) {
 
 // Render Interactive Pod Inventory Table
 function renderPodsTable() {
-    const searchEl = document.getElementById("search-pods");
-    const nsFilterEl = document.getElementById("filter-namespace");
-    const statusFilterEl = document.getElementById("filter-status");
-
-    const search = searchEl ? (searchEl.value || "").toLowerCase() : "";
-    const nsFilter = nsFilterEl ? nsFilterEl.value : "all";
-    const statusFilter = statusFilterEl ? statusFilterEl.value : "all";
+    const search = document.getElementById("search-pods").value.toLowerCase();
+    const nsFilter = document.getElementById("filter-namespace").value;
+    const statusFilter = document.getElementById("filter-status").value;
 
     const tbody = document.getElementById("pods-table-body");
-    if (!tbody) return;
     tbody.innerHTML = "";
 
-    const filtered = (rawPodsData || []).filter(pod => {
-        if (!pod) return false;
-        const podName = (pod.pod_name || "").toLowerCase();
-        const namespace = (pod.namespace || "").toLowerCase();
-        const node = (pod.node || "").toLowerCase();
+    const filtered = rawPodsData.filter(pod => {
+        const matchesSearch = pod.pod_name.toLowerCase().includes(search) ||
+                              pod.namespace.toLowerCase().includes(search) ||
+                              (pod.node || "").toLowerCase().includes(search);
 
-        const matchesSearch = !search || podName.includes(search) || namespace.includes(search) || node.includes(search);
         const matchesNs = (nsFilter === "all") || (pod.namespace === nsFilter);
 
         let matchesStatus = true;
@@ -154,55 +126,46 @@ function renderPodsTable() {
     }
 
     filtered.forEach(pod => {
-        try {
-            const tr = document.createElement("tr");
+        const tr = document.createElement("tr");
 
-            let statusDotClass = "healthy";
-            let statusBadgeClass = "healthy";
-            if (!pod.is_healthy) {
-                if (pod.status === "Pending") {
-                    statusDotClass = "pending";
-                    statusBadgeClass = "pending";
-                } else {
-                    statusDotClass = "unhealthy";
-                    statusBadgeClass = "unhealthy";
-                }
+        let statusDotClass = "healthy";
+        let statusBadgeClass = "healthy";
+        if (!pod.is_healthy) {
+            if (pod.status === "Pending") {
+                statusDotClass = "pending";
+                statusBadgeClass = "pending";
+            } else {
+                statusDotClass = "unhealthy";
+                statusBadgeClass = "unhealthy";
             }
-
-            const safeName = (pod.pod_name || "").replace(/'/g, "\\'");
-            const safeNs = (pod.namespace || "").replace(/'/g, "\\'");
-            const safeStatus = (pod.status || "").replace(/'/g, "\\'");
-
-            const actionBtnHtml = !pod.is_healthy
-                ? `<button class="btn-rca" onclick="openRcaForPod('${safeName}', '${safeNs}', '${safeStatus}')">⚡ Analyze RCA</button>`
-                : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
-
-            tr.innerHTML = `
-                <td><span class="status-dot ${statusDotClass}"></span></td>
-                <td><span class="pod-name-text">${pod.pod_name}</span></td>
-                <td><span class="ns-tag">${pod.namespace}</span></td>
-                <td><span class="reason-badge ${statusBadgeClass}">${pod.status}</span></td>
-                <td>${pod.ready || "1/1"}</td>
-                <td><span style="color: ${pod.restarts > 3 ? 'var(--color-red)' : 'inherit'}">${pod.restarts}</span></td>
-                <td>${pod.node || "unassigned"}</td>
-                <td>${pod.age || "active"}</td>
-                <td align="right">${actionBtnHtml}</td>
-            `;
-
-            tbody.appendChild(tr);
-        } catch (rowErr) {
-            console.error("Pod row render error:", rowErr, pod);
         }
+
+        const actionBtnHtml = !pod.is_healthy
+            ? `<button class="btn-rca" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' is failing')}\`)">⚡ Analyze RCA</button>`
+            : `<span style="color: var(--color-openai-green); font-size: 12px; opacity: 0.7;">✓ Healthy</span>`;
+
+        tr.innerHTML = `
+            <td><span class="status-dot ${statusDotClass}"></span></td>
+            <td><span class="pod-name-text">${pod.pod_name}</span></td>
+            <td><span class="ns-tag">${pod.namespace}</span></td>
+            <td><span class="reason-badge ${statusBadgeClass}">${pod.status}</span></td>
+            <td>${pod.ready || "1/1"}</td>
+            <td><span style="color: ${pod.restarts > 3 ? 'var(--color-red)' : 'inherit'}">${pod.restarts}</span></td>
+            <td>${pod.node || "unassigned"}</td>
+            <td>${pod.age || "active"}</td>
+            <td align="right">${actionBtnHtml}</td>
+        `;
+
+        tbody.appendChild(tr);
     });
 }
 
 // Render Active Incidents Grid
 function renderIncidentsGrid() {
     const container = document.getElementById("incidents-grid-container");
-    if (!container) return;
     container.innerHTML = "";
 
-    const unhealthy = (rawPodsData || []).filter(p => p && !p.is_healthy);
+    const unhealthy = rawPodsData.filter(p => !p.is_healthy);
     if (unhealthy.length === 0) {
         container.innerHTML = `
             <div style="grid-column: 1/-1; background: var(--bg-card); border: 1px solid var(--border-subtle); padding: 40px; text-align: center; border-radius: 12px; color: var(--text-secondary);">
@@ -215,30 +178,22 @@ function renderIncidentsGrid() {
     }
 
     unhealthy.forEach(pod => {
-        try {
-            const card = document.createElement("div");
-            card.className = "incident-card";
-            const safeName = (pod.pod_name || "").replace(/'/g, "\\'");
-            const safeNs = (pod.namespace || "").replace(/'/g, "\\'");
-            const safeStatus = (pod.status || "").replace(/'/g, "\\'");
-
-            card.innerHTML = `
-                <div class="incident-header">
-                    <div>
-                        <span class="reason-badge unhealthy" style="margin-bottom: 6px;">${pod.status}</span>
-                        <div class="incident-pod">${pod.pod_name}</div>
-                        <div style="font-size: 12px; color: var(--text-muted);">Namespace: ${pod.namespace} • Node: ${pod.node}</div>
-                    </div>
+        const card = document.createElement("div");
+        card.className = "incident-card";
+        card.innerHTML = `
+            <div class="incident-header">
+                <div>
+                    <span class="reason-badge unhealthy" style="margin-bottom: 6px;">${pod.status}</span>
+                    <div class="incident-pod">${pod.pod_name}</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">Namespace: ${pod.namespace} • Node: ${pod.node}</div>
                 </div>
-                <div class="incident-body">${pod.alert || pod.status_reason || 'Pod unhealthy'}</div>
-                <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="openRcaForPod('${safeName}', '${safeNs}', '${safeStatus}')">
-                    ⚡ Run OpenAI RAG Root Cause Analysis
-                </button>
-            `;
-            container.appendChild(card);
-        } catch (cardErr) {
-            console.error("Incident card render error:", cardErr, pod);
-        }
+            </div>
+            <div class="incident-body">${pod.alert || pod.status_reason || 'Pod unhealthy'}</div>
+            <button class="action-btn" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="openRcaForPod('${pod.pod_name}', '${pod.namespace}', '${pod.status}', \`${escapeStr(pod.alert || pod.pod_name + ' unhealthy')}\`)">
+                ⚡ Run OpenAI RAG Root Cause Analysis
+            </button>
+        `;
+        container.appendChild(card);
     });
 }
 
@@ -289,11 +244,6 @@ async function scanAndAnalyzeAll() {
 
 // Open OpenAI Slide-over RCA Drawer
 async function openRcaForPod(podName, namespace, statusReason, alertText) {
-    if (!alertText) {
-        const foundPod = (rawPodsData || []).find(p => p.pod_name === podName && p.namespace === namespace);
-        alertText = (foundPod && foundPod.alert) ? foundPod.alert : `Pod ${podName} in namespace ${namespace} is status ${statusReason || 'Unhealthy'}.`;
-    }
-
     document.getElementById("drawer-pod-name").textContent = podName;
     document.getElementById("drawer-namespace-sub").textContent = `Namespace: ${namespace} • Status: ${statusReason}`;
     document.getElementById("drawer-alert-content").textContent = alertText;
@@ -334,20 +284,10 @@ async function openRcaForPod(podName, namespace, statusReason, alertText) {
             return;
         }
 
-        const confidenceReasonEl = document.getElementById("drawer-confidence-reason");
-        const conf = data.confidence || "Medium";
-        confidenceVal.textContent = conf.toUpperCase();
-
-        if (conf === "High") {
-            confidenceVal.style.color = "var(--color-openai-green)";
-            if (confidenceReasonEl) confidenceReasonEl.textContent = "Exact SRE runbook match + verified log evidence";
-        } else if (conf === "Medium") {
-            confidenceVal.style.color = "var(--color-amber)";
-            if (confidenceReasonEl) confidenceReasonEl.textContent = "Configuration adjustment required (e.g. DNS / ConfigMap)";
-        } else {
-            confidenceVal.style.color = "var(--color-red)";
-            if (confidenceReasonEl) confidenceReasonEl.textContent = "Ambiguous failure telemetry or missing log traces";
-        }
+        confidenceVal.textContent = (data.confidence || "MEDIUM").toUpperCase();
+        if (data.confidence === "High") confidenceVal.style.color = "var(--color-openai-green)";
+        else if (data.confidence === "Medium") confidenceVal.style.color = "var(--color-amber)";
+        else confidenceVal.style.color = "var(--color-red)";
 
         rcaOutput.innerHTML = marked.parse(data.rca || "No RCA generated.");
 
@@ -468,101 +408,60 @@ async function runAutoFix() {
             return;
         }
 
-        // ── Real-time verification: poll live K8s status until completion ──────────
+        // ── Command executed — wait 5s then do ONE real status check ──────────
         const podName = currentRemediation.pod_name;
         const namespace = currentRemediation.namespace;
-        const maxWaitSeconds = 120;
-        const intervalMs = 3000;
-        const startTime = Date.now();
 
         statusEl.className = "autofix-status loading";
         statusEl.innerHTML = `
             <span class="spinner"></span>
-            <span>Applied <code>${result.command}</code><br>
-            Verifying cluster recovery status…</span>`;
+            <span>Command applied: <code>${result.command}</code><br>
+            Verifying pod status in 5s…</span>`;
 
-        // Poll loop until final state or timeout
-        while ((Date.now() - startTime) < (maxWaitSeconds * 1000)) {
-            await new Promise(r => setTimeout(r, intervalMs));
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
-            let podStatus;
-            try {
-                const r = await fetch(`/pods/status/${namespace}/${podName}`);
-                podStatus = await r.json();
-            } catch (_) {
-                podStatus = { is_running: false, status: "Unknown", found: false };
-            }
-
-            const actualStatus = podStatus.status || "Unknown";
-            const isRunning = podStatus.is_running;
-            const HARD_FAIL = ["CrashLoopBackOff", "OOMKilled", "Error", "ImagePullBackOff", "ErrImagePull"];
-
-            // 1. Success case: Pod is up and Running + Ready
-            if (isRunning) {
-                statusEl.className = "autofix-status success";
-                statusEl.innerHTML = `
-                    <strong>✅ Recovery Confirmed</strong><br>
-                    Pod <code>${podStatus.pod_name}</code> is live and <strong>Running</strong>
-                    (${podStatus.ready} Ready) in namespace <code>${namespace}</code>.<br>
-                    <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
-                `;
-                btn.disabled = false;
-                loadAuditLog();
-                fetchClusterData(); // refresh dashboard
-                return;
-            }
-
-            const elapsed = Math.round((Date.now() - startTime) / 1000);
-
-            // 2. Hard Failure case: Pod is still in error state AFTER giving K8s 15s to re-initialize
-            if (HARD_FAIL.includes(actualStatus) && elapsed >= 15) {
-                // Confirm with a second check 3s later
-                await new Promise(r => setTimeout(r, 3000));
-                let recheck;
-                try {
-                    const r2 = await fetch(`/pods/status/${namespace}/${podName}`);
-                    recheck = await r2.json();
-                } catch (_) {
-                    recheck = podStatus;
-                }
-
-                const finalStatus = recheck.status || actualStatus;
-                if (HARD_FAIL.includes(finalStatus) && !recheck.is_running) {
-                    statusEl.className = "autofix-status error";
-                    statusEl.innerHTML = `
-                        <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
-                        Pod <code>${recheck.pod_name || podName}</code> is currently
-                        <strong style="color:#f87171">${finalStatus}</strong>
-                        (${recheck.ready || "0/1"} Ready) in namespace <code>${namespace}</code>.<br>
-                        <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
-                    `;
-                    btn.disabled = false;
-                    loadAuditLog();
-                    fetchClusterData(); // refresh dashboard
-                    return;
-                }
-            }
-
-            // 3. Transient / Still in progress (ContainerCreating, Pending, etc.)
-            statusEl.className = "autofix-status loading";
-            statusEl.innerHTML = `
-                <span class="spinner"></span>
-                <span>
-                    Command applied: <code>${result.command}</code><br>
-                    Status: <strong style="color:#fbbf24">${actualStatus}</strong> (${podStatus.ready || "0/1"} Ready) — waiting for cluster stability (${elapsed}s elapsed)…
-                </span>`;
+        let podStatus;
+        try {
+            const r = await fetch(`/pods/status/${namespace}/${podName}`);
+            podStatus = await r.json();
+        } catch (_) {
+            podStatus = { is_running: false, status: "Unknown", found: false };
         }
 
-        // Timeout reached without reaching Running or hard failure
-        statusEl.className = "autofix-status error";
-        statusEl.innerHTML = `
-            <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
-            Pod <code>${podName}</code> did not reach Running state after ${maxWaitSeconds}s.<br>
-            <small style="color:var(--text-muted)">Command executed: <code>${result.command}</code></small>
-        `;
+        const actualStatus = podStatus.status || "Unknown";
+        const HARD_FAIL = ["CrashLoopBackOff", "OOMKilled", "Error", "ImagePullBackOff", "ErrImagePull"];
+
+        if (podStatus.is_running) {
+            statusEl.className = "autofix-status success";
+            statusEl.innerHTML = `
+                <strong>✅ Recovery Confirmed</strong><br>
+                Pod <code>${podStatus.pod_name}</code> is <strong>Running</strong>
+                (${podStatus.ready} Ready) in namespace <code>${namespace}</code>.<br>
+                <small style="color:var(--text-muted)">Command: <code>${result.command}</code></small>
+            `;
+        } else if (HARD_FAIL.includes(actualStatus)) {
+            statusEl.className = "autofix-status error";
+            statusEl.innerHTML = `
+                <strong>🚨 Recovery Failed — Human Intervention Required</strong><br>
+                Pod <code>${podStatus.pod_name || podName}</code> is
+                <strong style="color:#f87171">${actualStatus}</strong>
+                (${podStatus.ready || "0/1"} Ready).<br>
+                <small style="color:var(--text-muted)">Command: <code>${result.command}</code></small>
+            `;
+        } else {
+            statusEl.className = "autofix-status warning";
+            statusEl.innerHTML = `
+                <strong>⚙️ Command Applied — Recovery in Progress</strong><br>
+                Pod <code>${podStatus.pod_name || podName}</code> is currently
+                <strong style="color:#fbbf24">${actualStatus}</strong>
+                (${podStatus.ready || "0/1"} Ready).<br>
+                Kubernetes is restarting the pod — check the dashboard in ~60s.<br>
+                <small style="color:var(--text-muted)">Command: <code>${result.command}</code></small>
+            `;
+        }
+
         btn.disabled = false;
         loadAuditLog();
-        fetchClusterData();
 
     } catch (err) {
         statusEl.className = "autofix-status error";
@@ -695,7 +594,4 @@ function updateAutofixCard(remediation, podName, namespace) {
         currentRemediation = null;
     }
 }
-
-// Guarantee execution when app.js loads
-fetchClusterData();
 

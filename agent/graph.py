@@ -31,14 +31,11 @@ def _join(items):
 
 
 def _extract_confidence(text):
-    upper = (text or "").upper()
-    if "CONFIDENCE: HIGH" in upper or "CONFIDENCE:HIGH" in upper:
+    if "CONFIDENCE: High" in text:
         return "High"
-    if "CONFIDENCE: MEDIUM" in upper or "CONFIDENCE:MEDIUM" in upper:
+    if "CONFIDENCE: Medium" in text:
         return "Medium"
-    if "CONFIDENCE: LOW" in upper or "CONFIDENCE:LOW" in upper:
-        return "Low"
-    return "Medium"  # Default fallback if LLM omitted line
+    return "Low"
 
 
 def _extract_log_evidence(logs):
