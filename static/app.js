@@ -57,36 +57,42 @@ function updateMetricCards(stats) {
     const healthFillEl = document.getElementById("stat-health-fill");
     const healthSubEl = document.getElementById("stat-health-subtext");
 
-    healthValEl.textContent = `${healthPct}%`;
-    healthFillEl.style.width = `${healthPct}%`;
-
-    if (healthPct < 80) {
-        healthFillEl.style.backgroundColor = "var(--color-red)";
-        healthValEl.className = "metric-value red-text";
-        healthSubEl.textContent = "Cluster degradation detected";
-    } else if (healthPct < 95) {
-        healthFillEl.style.backgroundColor = "var(--color-amber)";
-        healthValEl.className = "metric-value";
-        healthSubEl.textContent = "Minor warnings present";
-    } else {
-        healthFillEl.style.backgroundColor = "var(--color-openai-green)";
-        healthValEl.className = "metric-value green-text";
-        healthSubEl.textContent = "Cluster running optimally";
+    if (healthValEl) healthValEl.textContent = `${healthPct}%`;
+    if (healthFillEl) {
+        healthFillEl.style.width = `${healthPct}%`;
+        if (healthPct < 80) {
+            healthFillEl.style.backgroundColor = "var(--color-red)";
+            if (healthValEl) healthValEl.className = "metric-value red-text";
+            if (healthSubEl) healthSubEl.textContent = "Cluster degradation detected";
+        } else if (healthPct < 95) {
+            healthFillEl.style.backgroundColor = "var(--color-amber)";
+            if (healthValEl) healthValEl.className = "metric-value";
+            if (healthSubEl) healthSubEl.textContent = "Minor warnings present";
+        } else {
+            healthFillEl.style.backgroundColor = "var(--color-openai-green)";
+            if (healthValEl) healthValEl.className = "metric-value green-text";
+            if (healthSubEl) healthSubEl.textContent = "Cluster running optimally";
+        }
     }
 
-    document.getElementById("stat-total-pods").textContent = totalPods;
-    document.getElementById("stat-healthy-pods").textContent = healthyPods;
-    document.getElementById("stat-unhealthy-pods").textContent = unhealthyPods;
-    document.getElementById("incidents-count").textContent = unhealthyPods;
+    const totalEl = document.getElementById("stat-total-pods");
+    if (totalEl) totalEl.textContent = totalPods;
+    const healthyEl = document.getElementById("stat-healthy-pods");
+    if (healthyEl) healthyEl.textContent = healthyPods;
+    const unhealthyEl = document.getElementById("stat-unhealthy-pods");
+    if (unhealthyEl) unhealthyEl.textContent = unhealthyPods;
+    const incCountEl = document.getElementById("incidents-count");
+    if (incCountEl) incCountEl.textContent = unhealthyPods;
 }
 
 // Populate Namespace Filter
 function updateNamespaceDropdown(namespaces) {
     const select = document.getElementById("filter-namespace");
+    if (!select) return;
     const currentVal = select.value;
     select.innerHTML = '<option value="all">All Namespaces</option>';
 
-    namespaces.forEach(ns => {
+    (namespaces || []).forEach(ns => {
         const option = document.createElement("option");
         option.value = ns;
         option.textContent = ns;
@@ -98,18 +104,25 @@ function updateNamespaceDropdown(namespaces) {
 
 // Render Interactive Pod Inventory Table
 function renderPodsTable() {
-    const search = document.getElementById("search-pods").value.toLowerCase();
-    const nsFilter = document.getElementById("filter-namespace").value;
-    const statusFilter = document.getElementById("filter-status").value;
+    const searchEl = document.getElementById("search-pods");
+    const nsFilterEl = document.getElementById("filter-namespace");
+    const statusFilterEl = document.getElementById("filter-status");
+
+    const search = searchEl ? (searchEl.value || "").toLowerCase() : "";
+    const nsFilter = nsFilterEl ? nsFilterEl.value : "all";
+    const statusFilter = statusFilterEl ? statusFilterEl.value : "all";
 
     const tbody = document.getElementById("pods-table-body");
+    if (!tbody) return;
     tbody.innerHTML = "";
 
-    const filtered = rawPodsData.filter(pod => {
-        const matchesSearch = pod.pod_name.toLowerCase().includes(search) ||
-                              pod.namespace.toLowerCase().includes(search) ||
-                              (pod.node || "").toLowerCase().includes(search);
+    const filtered = (rawPodsData || []).filter(pod => {
+        if (!pod) return false;
+        const podName = (pod.pod_name || "").toLowerCase();
+        const namespace = (pod.namespace || "").toLowerCase();
+        const node = (pod.node || "").toLowerCase();
 
+        const matchesSearch = !search || podName.includes(search) || namespace.includes(search) || node.includes(search);
         const matchesNs = (nsFilter === "all") || (pod.namespace === nsFilter);
 
         let matchesStatus = true;
