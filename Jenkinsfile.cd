@@ -37,11 +37,13 @@ pipeline {
             }
         }
 
-        stage('Deploy Manifests to K8s Cluster') {
+        stage('Deploy Manifests & Rollout Restart') {
             steps {
                 script {
-                    echo '=== [CD] Stage 3: Applying Kubernetes deployment manifests ==='
+                    echo '=== [CD] Stage 3: Applying Kubernetes manifests & triggering fresh pod rollout ==='
                     sh 'kubectl apply -f deploy-agent.yaml'
+                    // Explicitly restart deployment so Kubernetes terminates old pods and spawns new ones
+                    sh 'kubectl rollout restart deployment/devops-incident-agent'
                 }
             }
         }
@@ -56,12 +58,18 @@ pipeline {
             }
         }
 
-        stage('Post-Deploy Smoke Test') {
+        stage('Post-Deploy Health Verification') {
             steps {
                 script {
-                    echo '=== [CD] Stage 5: Running post-deployment health check ping ==='
+                    echo '=== [CD] Stage 5: Verifying active pod readiness and status ==='
                     sh '''
-                        curl -s -f http://localhost:30800/pods > /dev/null && echo "NodePort Endpoint Healthy (200 OK)" || echo "Warning: Service endpoint check pending"
+                        POD_NAME=$(kubectl get pods -l app=devops-incident-agent -n default -o jsonpath='{.items[0].metadata.name}')
+                        POD_STATUS=$(kubectl get pod $POD_NAME -n default -o jsonpath='{.status.phase}')
+                        echo "Newly Rolled Pod: $POD_NAME | Phase: $POD_STATUS"
+                        if [ "$POD_STATUS" != "Running" ]; then
+                            echo "ERROR: New pod is not in Running state!"
+                            exit 1
+                        fi
                     '''
                 }
             }
@@ -70,7 +78,7 @@ pipeline {
 
     post {
         success {
-            echo '=== [CD] DEPLOYMENT SUCCESSFUL: Application live and healthy on NodePort 30800 ==='
+            echo '=== [CD] DEPLOYMENT SUCCESSFUL: Fresh pods rolled out and live on NodePort 30800 ==='
         }
         failure {
             echo '=== [CD] DEPLOYMENT FAILED: Rollout status or health verification failed. ==='
