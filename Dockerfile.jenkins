@@ -8,4 +8,6 @@ RUN apt-get update && apt-get install -y ca-certificates curl docker.io && \
 
 RUN git config --global --add safe.directory '*'
 
+RUN jenkins-plugin-cli --plugins pipeline-stage-view workflow-aggregator git docker-workflow credentials-binding
+
 USER jenkins
