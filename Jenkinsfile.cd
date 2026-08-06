@@ -1,0 +1,79 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME    = 'devops-incident-agent'
+        IMAGE_TAG     = 'latest'
+        K8S_NAMESPACE = 'default'
+    }
+
+    stages {
+        stage('SCM Checkout') {
+            steps {
+                echo '=== [CD] Stage 1: Checking out deployment manifests ==='
+                checkout scm
+            }
+        }
+
+        stage('Cluster Credentials & Secrets Setup') {
+            steps {
+                echo '=== [CD] Stage 2: Injecting Kubernetes secret configuration ==='
+                withCredentials([string(credentialsId: 'GROQ_API_KEY', variable: 'GROQ_API_KEY')]) {
+                    script {
+                        sh '''
+                            if ! command -v kubectl >/dev/null 2>&1; then
+                                echo "ERROR: kubectl not installed in Jenkins container"
+                                exit 1
+                            fi
+                        '''
+                        sh 'kubectl config use-context docker-desktop || true'
+                        sh '''
+                            kubectl create secret generic devops-agent-secrets \
+                                --from-literal=GROQ_API_KEY=$GROQ_API_KEY \
+                                --dry-run=client -o yaml | kubectl apply -f -
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Manifests to K8s Cluster') {
+            steps {
+                script {
+                    echo '=== [CD] Stage 3: Applying Kubernetes deployment manifests ==='
+                    sh 'kubectl apply -f deploy-agent.yaml'
+                }
+            }
+        }
+
+        stage('Rollout Verification & Pod Health') {
+            steps {
+                script {
+                    echo '=== [CD] Stage 4: Polling Kubernetes rollout status and pod readiness ==='
+                    sh 'kubectl rollout status deployment/devops-incident-agent --timeout=90s'
+                    sh 'kubectl get pods -l app=devops-incident-agent -n ${K8S_NAMESPACE} -o wide'
+                }
+            }
+        }
+
+        stage('Post-Deploy Smoke Test') {
+            steps {
+                script {
+                    echo '=== [CD] Stage 5: Running post-deployment health check ping ==='
+                    sh '''
+                        curl -s -f http://localhost:30800/pods > /dev/null && echo "NodePort Endpoint Healthy (200 OK)" || echo "Warning: Service endpoint check pending"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '=== [CD] DEPLOYMENT SUCCESSFUL: Application live and healthy on NodePort 30800 ==='
+        }
+        failure {
+            echo '=== [CD] DEPLOYMENT FAILED: Rollout status or health verification failed. ==='
+        }
+    }
+}

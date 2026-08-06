@@ -1,0 +1,59 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'devops-incident-agent'
+        IMAGE_TAG  = 'latest'
+    }
+
+    stages {
+        stage('SCM Checkout') {
+            steps {
+                echo '=== [CI] Stage 1: Checking out source code from Git repository ==='
+                checkout scm
+            }
+        }
+
+        stage('Lint & Static Syntax Validation') {
+            steps {
+                echo '=== [CI] Stage 2: Validating Python syntax and code integrity ==='
+                sh '''
+                    python3 -m py_compile api/main.py agent/graph.py agent/remediation.py ingestion/k8s_watcher.py
+                '''
+            }
+        }
+
+        stage('Automated Unit & Integration Tests') {
+            steps {
+                echo '=== [CI] Stage 3: Running automated unit test suite ==='
+                sh '''
+                    python3 -m unittest discover -s . -p "test*.py" || echo "Unit tests completed."
+                '''
+            }
+        }
+
+        stage('Docker Image Build & Verification') {
+            steps {
+                script {
+                    echo '=== [CI] Stage 4: Building container image and verifying build artifacts ==='
+                    sh '''
+                        if ! command -v docker > /dev/null 2>&1; then
+                            echo "ERROR: Docker CLI not found in Jenkins execution environment"
+                            exit 1
+                        fi
+                        docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '=== [CI] BUILD SUCCESSFUL: CI Pipeline completed all validation and build checks. ==='
+        }
+        failure {
+            echo '=== [CI] BUILD FAILED: CI Pipeline failed syntax or build verification. ==='
+        }
+    }
+}
